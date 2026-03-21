@@ -12,7 +12,7 @@
 #include <avr/wdt.h>
 
 // ─── Firmware Version ────────────────────────────────────────────────────────
-#define FW_VERSION "2.0.0"
+#define FW_VERSION "2.1.0"
 
 // ─── Pin Definitions ─────────────────────────────────────────────────────────
 #define PIN_LED_ACTIVITY  LED_BUILTIN   // Pin 13 - flash on UART/TCP activity
@@ -99,6 +99,15 @@ static uint32_t bytesRxUart    = 0;
 static uint32_t bytesTxUart    = 0;
 static uint32_t bytesRxTcp     = 0;
 static uint32_t bytesTxTcp     = 0;
+
+// UART RX ring buffer health:
+// NOTE: We cannot check the hardware overrun flag (DOR1 in UCSR1A) as the
+// Arduino core ISR (_rx_complete_irq) reads UDR1 on every received byte,
+// which clears DOR1 before our main loop can see it. Instead we detect overflow
+// at the ring buffer. When Serial1.available() reaches SERIAL_RX_BUFFER_SIZE-1
+// (max), the ISR silently discards incoming bytes.
+static uint32_t uartBufferOverflowCount = 0;
+static uint16_t uartRxBufPeakUsed       = 0;  // High-water mark
 
 // ─── State ───────────────────────────────────────────────────────────────────
 static bool tcpConnected      = false;
@@ -309,6 +318,11 @@ static void printStatus() {
   Serial.print(F("  UART TX  : ")); Serial.print(bytesTxUart); Serial.println(F(" B"));
   Serial.print(F("  TCP  RX  : ")); Serial.print(bytesRxTcp);  Serial.println(F(" B"));
   Serial.print(F("  TCP  TX  : ")); Serial.print(bytesTxTcp);  Serial.println(F(" B"));
+  Serial.println(F("--- UART Health ---"));
+  Serial.print(F("  RX Buf Overflows: ")); Serial.println(uartBufferOverflowCount);
+  Serial.print(F("  RX Buf Peak Used: ")); Serial.print(uartRxBufPeakUsed);
+  Serial.print(F(" / ")); Serial.println(SERIAL_RX_BUFFER_SIZE);
+  Serial.println(F("-------------------"));
   Serial.print(F("  Uptime   : ")); Serial.print(upSec); Serial.println(F(" s"));
   Serial.println(F("================================="));
 }
@@ -365,6 +379,8 @@ static void processCli(const char *line) {
     errorCount = 0;
     reconnectCount = 0;
     lastErrorMs = 0;  // Also clear LED timer
+    uartBufferOverflowCount = 0;
+    uartRxBufPeakUsed = 0;
     Serial.println(F("[SYS] Counters cleared."));
   }
   else if (strncasecmp(line, "set ", 4) == 0) {
@@ -551,6 +567,42 @@ static void sendHeartbeat() {
     tcpClient.write(hbFrame, 2);
     lastHbSentMs = now;
     Serial.println(F("[HB-DBG] Sent heartbeat"));
+  }
+}
+
+// =============================================================================
+//  UART RX buffer health
+// =============================================================================
+
+static void checkUartBufferOverflow() {
+  uint16_t pendingRx = Serial1.available();
+
+  // Track high-water mark
+  if (pendingRx > uartRxBufPeakUsed) {
+    uartRxBufPeakUsed = pendingRx;
+  }
+
+  // SERIAL_RX_BUFFER_SIZE - 1 is the max capacity of the Arduino ring buffer
+  // If we hit this, the ISR is silently discarding incoming bytes.
+  if (pendingRx >= SERIAL_RX_BUFFER_SIZE - 1) {
+    uartBufferOverflowCount++;
+    noteError();
+    Serial.print(F("[UART-ERR] RX ring buffer full! Overflow #"));
+    Serial.println(uartBufferOverflowCount);
+  }
+
+  // Warn once when buffer exceeds 75% capacity
+  static bool highWaterWarned = false;
+  if (pendingRx > ((SERIAL_RX_BUFFER_SIZE * 3) / 4)) {
+    if (!highWaterWarned) {
+      Serial.print(F("[UART-WARN] RX buf high: "));
+      Serial.print(pendingRx);
+      Serial.print('/');
+      Serial.println(SERIAL_RX_BUFFER_SIZE);
+      highWaterWarned = true;
+    }
+  } else {
+    highWaterWarned = false;
   }
 }
 
@@ -825,6 +877,9 @@ void loop() {
 
   // ── Heartbeat ──────────────────────────────────────────────────────────────
   sendHeartbeat();
+
+  // ── UART health check ─────────────────────────────────────────────────────
+  checkUartBufferOverflow();
 
   // ── Data bridge ────────────────────────────────────────────────────────────
   bridgeUartToTcp();
