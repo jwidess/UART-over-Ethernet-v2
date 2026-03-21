@@ -87,7 +87,8 @@ static unsigned long lastHbSentMs     = 0;
 static unsigned long lastHbRecvMs     = 0;
 static unsigned long lastConnBlinkMs  = 0;
 static unsigned long activityOffMs    = 0;
-static unsigned long bootTimeMs       = 0;
+static unsigned long uptimeTotalSec   = 0;
+static unsigned long lastUptimeTickMs = 0;
 static unsigned long backoffMs        = BACKOFF_INIT_MS;
 static unsigned long lastConnectAttemptMs = 0;
 static unsigned long lastErrorMs          = 0;
@@ -296,9 +297,44 @@ static void updateErrorLed() {
 //  Status display
 // =============================================================================
 
-static void printStatus() {
-  unsigned long upSec = (millis() - bootTimeMs) / 1000UL; // Uptime in seconds
+static void updateUptime() {
+  unsigned long now = millis();
 
+  // Unsigned subtraction is overflow-safe, so this works when millis() wraps around after ~49 days.
+  unsigned long elapsed = (now - lastUptimeTickMs);
+
+  if (elapsed >= 1000UL) {
+    uint32_t secs = (elapsed / 1000UL);  // Whole seconds elapsed since last update.
+    uptimeTotalSec = (uptimeTotalSec + secs);
+    lastUptimeTickMs = (lastUptimeTickMs + (secs * 1000UL));
+  }
+}
+
+static void printUptime() {
+  uint32_t t = uptimeTotalSec;
+
+  // Calc days/hours/minutes/seconds
+  uint16_t d = (t / 86400UL);
+  t = (t % 86400UL);
+  uint8_t h = (t / 3600UL);
+  t = (t % 3600UL);
+  uint8_t m = (t / 60UL);
+  uint8_t s = (t % 60UL);
+
+  if (d > 0) {
+    Serial.print(d);
+    Serial.print(F("d "));
+  }
+
+  Serial.print(h);
+  Serial.print(F("h "));
+  Serial.print(m);
+  Serial.print(F("m "));
+  Serial.print(s);
+  Serial.print(F("s"));
+}
+
+static void printStatus() {
   Serial.println(F("=== UART-over-Ethernet Bridge ==="));
   Serial.print(F("  Firmware : v")); Serial.println(F(FW_VERSION));
   Serial.print(F("  Role     : ")); Serial.println(cfg.role == 0 ? F("SERVER") : F("CLIENT"));
@@ -323,7 +359,7 @@ static void printStatus() {
   Serial.print(F("  RX Buf Peak Used: ")); Serial.print(uartRxBufPeakUsed);
   Serial.print(F(" / ")); Serial.println(SERIAL_RX_BUFFER_SIZE);
   Serial.println(F("-------------------"));
-  Serial.print(F("  Uptime   : ")); Serial.print(upSec); Serial.println(F(" s"));
+  Serial.print(F("  Uptime   : ")); printUptime(); Serial.println();
   Serial.println(F("================================="));
 }
 
@@ -844,7 +880,7 @@ void setup() {
     lastConnectAttemptMs = millis() - BACKOFF_INIT_MS; // Connect immediately
   }
 
-  bootTimeMs = millis();
+  lastUptimeTickMs = millis();
 
   // Enable watchdog LAST (after all init)
   wdt_enable(WDT_TIMEOUT);
@@ -859,6 +895,7 @@ void setup() {
 
 void loop() {
   wdt_reset();
+  updateUptime();
 
   // ── Ethernet maintenance ───────────────────────────────────────────────────
   Ethernet.maintain();
