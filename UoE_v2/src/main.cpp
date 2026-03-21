@@ -12,7 +12,7 @@
 #include <avr/wdt.h>
 
 // ─── Firmware Version ────────────────────────────────────────────────────────
-#define FW_VERSION "2.2.0"
+#define FW_VERSION "2.2.1"
 
 // ─── Pin Definitions ─────────────────────────────────────────────────────────
 #define PIN_LED_ACTIVITY  LED_BUILTIN   // Pin 13 - flash on UART/TCP activity
@@ -82,16 +82,16 @@ static char cliBuf[CLI_BUF_SIZE];
 static uint8_t cliLen = 0;
 
 // ─── Timing ──────────────────────────────────────────────────────────────────
-static unsigned long lastUartByteMs   = 0;
-static unsigned long lastHbSentMs     = 0;
-static unsigned long lastHbRecvMs     = 0;
-static unsigned long lastConnBlinkMs  = 0;
-static unsigned long activityOffMs    = 0;
-static unsigned long uptimeTotalSec   = 0;
-static unsigned long lastUptimeTickMs = 0;
-static unsigned long backoffMs        = BACKOFF_INIT_MS;
-static unsigned long lastConnectAttemptMs = 0;
-static unsigned long lastErrorMs          = 0;
+static uint32_t lastUartByteMs       = 0;
+static uint32_t lastHbSentMs         = 0;
+static uint32_t lastHbRecvMs         = 0;
+static uint32_t lastConnBlinkMs      = 0;
+static uint32_t activityOffMs        = 0;
+static uint32_t uptimeTotalSec       = 0;
+static uint32_t lastUptimeTickMs     = 0;
+static uint32_t backoffMs            = BACKOFF_INIT_MS;
+static uint32_t lastConnectAttemptMs = 0;
+static uint32_t lastErrorMs          = 0;
 
 // ─── Stats ───────────────────────────────────────────────────────────────────
 static uint32_t reconnectCount = 0;
@@ -120,15 +120,15 @@ static bool connLedState      = false;
 static bool ethLinkUp         = false;
 static bool debugMode         = false;
 
-static void updatePeakTiming(unsigned long elapsedMs, unsigned long &peakMs) {
+static void updatePeakTiming(uint32_t elapsedMs, uint32_t &peakMs) {
   if (elapsedMs > peakMs) {
     peakMs = elapsedMs;
   }
 }
 
 static void logTcpTiming(const __FlashStringHelper *opLabel,
-                         unsigned long elapsedMs,
-                         unsigned long thresholdMs,
+                         uint32_t elapsedMs,
+                         uint32_t thresholdMs,
                          int payloadBytes = -1) {
   if (!debugMode) {
     return;
@@ -309,7 +309,7 @@ static void updateConnectLed() {
     digitalWrite(PIN_LED_CONNECT, HIGH);
   } else if (ethLinkUp) {
     // Blink while trying to connect
-    unsigned long now = millis();
+    uint32_t now = millis();
     if ((now - lastConnBlinkMs) >= CONNECT_BLINK_MS) {
       connLedState = !connLedState;
       digitalWrite(PIN_LED_CONNECT, connLedState ? HIGH : LOW);
@@ -331,10 +331,10 @@ static void updateErrorLed() {
 // =============================================================================
 
 static void updateUptime() {
-  unsigned long now = millis();
+  uint32_t now = millis();
 
   // Unsigned subtraction is overflow-safe, so this works when millis() wraps around after ~49 days.
-  unsigned long elapsed = (now - lastUptimeTickMs);
+  uint32_t elapsed = (now - lastUptimeTickMs);
 
   if (elapsed >= 1000UL) {
     uint32_t secs = (elapsed / 1000UL);  // Whole seconds elapsed since last update.
@@ -579,7 +579,7 @@ static void handleServerAccept() {
 static void handleClientConnect() {
   if (tcpConnected) return;
 
-  unsigned long now = millis();
+  uint32_t now = millis();
   if (now - lastConnectAttemptMs < backoffMs) return;
   lastConnectAttemptMs = now;
 
@@ -591,9 +591,9 @@ static void handleClientConnect() {
   Serial.println(F("..."));
 
   // connect() can block while the stack performs ARP/TCP handshake.
-  unsigned long connectStartMs = millis();
+  uint32_t connectStartMs = millis();
   int result = tcpClient.connect(remote, cfg.port);
-  unsigned long connectElapsedMs = millis() - connectStartMs;
+  uint32_t connectElapsedMs = millis() - connectStartMs;
   updatePeakTiming(connectElapsedMs, peakTcpConnectMs);
   logTcpTiming(F("connect()"), connectElapsedMs, 0UL);
 
@@ -609,7 +609,7 @@ static void handleClientConnect() {
     Serial.print(result);
     Serial.println(F("). Backing off..."));
     // Exponential back off capped at BACKOFF_MAX_MS
-    backoffMs = min(backoffMs * 2, (unsigned long)BACKOFF_MAX_MS);
+    backoffMs = min(backoffMs * 2, (uint32_t)BACKOFF_MAX_MS);
   }
 }
 
@@ -627,8 +627,8 @@ static void checkTcpConnection() {
   }
 
   // Check heartbeat timeout
-  unsigned long now = millis();
-  unsigned long hbTimeoutMs = (unsigned long)cfg.hbIntervalSec * HB_MISS_FACTOR * 1000UL;
+  uint32_t now = millis();
+  uint32_t hbTimeoutMs = (uint32_t)cfg.hbIntervalSec * HB_MISS_FACTOR * 1000UL;
   if (now - lastHbRecvMs > hbTimeoutMs) {
     Serial.print(F("[TCP] Heartbeat timeout (last HB "));
     Serial.print((now - lastHbRecvMs) / 1000);
@@ -645,8 +645,8 @@ static void checkTcpConnection() {
 
 static void sendHeartbeat() {
   if (!tcpConnected) return;
-  unsigned long now = millis();
-  if (now - lastHbSentMs >= (unsigned long)cfg.hbIntervalSec * 1000UL) {
+  uint32_t now = millis();
+  if (now - lastHbSentMs >= (uint32_t)cfg.hbIntervalSec * 1000UL) {
     uint8_t hbFrame[2] = { FRAME_TYPE_HB, 0x00 };
     tcpClient.write(hbFrame, 2);
     lastHbSentMs = now;
@@ -750,10 +750,10 @@ static void bridgeUartToTcp() {
       uint8_t header[2] = { FRAME_TYPE_DATA, chunkLen };
 
       // Measure full framed write (header + payload).
-      unsigned long writeStartMs = millis();
+      uint32_t writeStartMs = millis();
       tcpClient.write(header, 2);
       size_t sent = tcpClient.write(uartBuf + offset, chunkLen);
-      unsigned long writeElapsedMs = millis() - writeStartMs;
+      uint32_t writeElapsedMs = millis() - writeStartMs;
 
       updatePeakTiming(writeElapsedMs, peakTcpWriteMs);
       logTcpTiming(F("write()"), writeElapsedMs, 5UL, chunkLen);
@@ -786,9 +786,9 @@ static void bridgeTcpToUart() {
   int toRead = min(avail, (int)TCP_RX_CHUNK);
 
   // read() may block briefly depending on socket state and buffering.
-  unsigned long readStartMs = millis();
+  uint32_t readStartMs = millis();
   int n = tcpClient.read(chunk, toRead);
-  unsigned long readElapsedMs = millis() - readStartMs;
+  uint32_t readElapsedMs = millis() - readStartMs;
 
   updatePeakTiming(readElapsedMs, peakTcpReadMs);
   logTcpTiming(F("read()"), readElapsedMs, 5UL);
