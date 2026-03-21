@@ -21,7 +21,7 @@
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 #define SERIAL0_BAUD         115200
-// Ref build flag `-DSERIAL_RX_BUFFER_SIZE=256` in platformio.ini
+// Ref build flag `-DSERIAL_RX_BUFFER_SIZE=1024` in platformio.ini
 #define UART_BUF_SIZE        256     // Max bytes to read from UART per loop
 #define CLI_BUF_SIZE         80      // Max bytes to read from CLI per loop
 #define TCP_RX_CHUNK         64      // Max bytes to read from TCP per loop
@@ -560,7 +560,7 @@ static void sendHeartbeat() {
 
 static void bridgeUartToTcp() {
   // Read available UART bytes into buffer
-  while (Serial1.available() && uartBufLen < UART_BUF_SIZE) {
+  while (Serial1.available() && (uartBufLen < UART_BUF_SIZE)) {
     uartBuf[uartBufLen++] = Serial1.read();
     bytesRxUart++;
     lastUartByteMs = millis();
