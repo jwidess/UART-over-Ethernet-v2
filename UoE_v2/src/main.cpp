@@ -12,7 +12,7 @@
 #include <avr/wdt.h>
 
 // ─── Firmware Version ────────────────────────────────────────────────────────
-#define FW_VERSION "2.2.1"
+#define FW_VERSION "2.3.0"
 
 // ─── Pin Definitions ─────────────────────────────────────────────────────────
 #define PIN_LED_ACTIVITY  LED_BUILTIN   // Pin 13 - flash on UART/TCP activity
@@ -55,7 +55,8 @@
 #define EE_PORT           16  // 2 bytes (uint16)
 #define EE_BAUD           18  // 4 bytes (uint32)
 #define EE_HB_SEC         22  // 1 byte
-// Total: 23 bytes
+#define EE_DEBUG          23  // 1 byte
+// Total: 24 bytes
 
 // ─── Runtime Config ──────────────────────────────────────────────────────────
 struct Config {
@@ -66,6 +67,7 @@ struct Config {
   uint16_t port;
   uint32_t baud;
   uint8_t  hbIntervalSec;
+  uint8_t  debug;  // 0 = off, 1 = on
 };
 
 static Config cfg;
@@ -118,7 +120,8 @@ static bool tcpConnected      = false;
 static bool prevTcpConnected  = false;
 static bool connLedState      = false;
 static bool ethLinkUp         = false;
-static bool debugMode         = false;
+
+#define debugMode (cfg.debug)
 
 static void updatePeakTiming(uint32_t elapsedMs, uint32_t &peakMs) {
   if (elapsedMs > peakMs) {
@@ -187,6 +190,7 @@ static void loadDefaults() {
   cfg.port = 3000;
   cfg.baud = 19200;
   cfg.hbIntervalSec = HB_DEFAULT_SEC;
+  cfg.debug = 0;
 }
 
 static void loadConfig() {
@@ -206,6 +210,7 @@ static void loadConfig() {
             | ((uint32_t)EEPROM.read(EE_BAUD + 3) << 24);
   cfg.hbIntervalSec = EEPROM.read(EE_HB_SEC);
   if (cfg.hbIntervalSec == 0 || cfg.hbIntervalSec > 60) cfg.hbIntervalSec = HB_DEFAULT_SEC;
+  cfg.debug = (EEPROM.read(EE_DEBUG) == 1) ? 1 : 0;
   Serial.println(F("[EEPROM] Valid config loaded!"));
 }
 
@@ -222,6 +227,7 @@ static void saveConfig() {
   EEPROM.update(EE_BAUD + 2, (uint8_t)((cfg.baud >> 16) & 0xFF));
   EEPROM.update(EE_BAUD + 3, (uint8_t)((cfg.baud >> 24) & 0xFF));
   EEPROM.update(EE_HB_SEC, cfg.hbIntervalSec);
+  EEPROM.update(EE_DEBUG, cfg.debug);
   Serial.println(F("[EEPROM] Config saved."));
 }
 
@@ -377,6 +383,7 @@ static void printStatus() {
   Serial.print(F("  TCP Port : ")); Serial.println(cfg.port);
   Serial.print(F("  UART Baud: ")); Serial.println(cfg.baud);
   Serial.print(F("  HB Int.  : ")); Serial.print(cfg.hbIntervalSec); Serial.println(F(" s"));
+  Serial.print(F("  Debug    : ")); Serial.println(debugMode ? F("ON") : F("OFF"));
   Serial.println(F("--- Network ---"));
   Serial.print(F("  Eth Link : ")); Serial.println(ethLinkUp ? F("UP") : F("DOWN"));
   Serial.print(F("  TCP      : ")); Serial.println(tcpConnected ? F("CONNECTED") : F("DISCONNECTED"));
@@ -509,8 +516,8 @@ static void processCli(const char *line) {
     }
     else if (strncasecmp(arg, "debug ", 6) == 0) {
       const char *val = arg + 6;
-      if (strcasecmp(val, "on") == 0) { debugMode = true; Serial.println(F("[CFG] Debug = ON")); }
-      else if (strcasecmp(val, "off") == 0) { debugMode = false; Serial.println(F("[CFG] Debug = OFF")); }
+      if (strcasecmp(val, "on") == 0) { cfg.debug = 1; Serial.println(F("[CFG] Debug = ON")); }
+      else if (strcasecmp(val, "off") == 0) { cfg.debug = 0; Serial.println(F("[CFG] Debug = OFF")); }
       else Serial.println(F("[ERR] Use: set debug <on|off>"));
     }
     else {
