@@ -89,6 +89,12 @@ The table below shows the time it takes to fill the RX buffer at different baud 
 | 19200 | 33.3 ms | 133.3 ms | 533.3 ms |
 | 38400 | 16.7 ms | 66.7 ms | 266.7 ms |
 
+
+# To-do / Improvements
+- [ ] Add optional gateway address for routing across subnets.
+- [ ] Break out certain features/functions/sections into separate files for better modularity and readability.
+- [ ] Test 38.4k+ baud and if reliable, add as an option in the CLI.
+
 ## License
 
 GNU Affero General Public License v3.0 
