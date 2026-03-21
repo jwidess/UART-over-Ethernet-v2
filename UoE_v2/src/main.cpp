@@ -12,7 +12,7 @@
 #include <avr/wdt.h>
 
 // ─── Firmware Version ────────────────────────────────────────────────────────
-#define FW_VERSION "2.1.0"
+#define FW_VERSION "2.2.0"
 
 // ─── Pin Definitions ─────────────────────────────────────────────────────────
 #define PIN_LED_ACTIVITY  LED_BUILTIN   // Pin 13 - flash on UART/TCP activity
@@ -100,6 +100,9 @@ static uint32_t bytesRxUart    = 0;
 static uint32_t bytesTxUart    = 0;
 static uint32_t bytesRxTcp     = 0;
 static uint32_t bytesTxTcp     = 0;
+static uint32_t peakTcpWriteMs   = 0;
+static uint32_t peakTcpConnectMs = 0;
+static uint32_t peakTcpReadMs    = 0;
 
 // UART RX ring buffer health:
 // NOTE: We cannot check the hardware overrun flag (DOR1 in UCSR1A) as the
@@ -116,6 +119,36 @@ static bool prevTcpConnected  = false;
 static bool connLedState      = false;
 static bool ethLinkUp         = false;
 static bool debugMode         = false;
+
+static void updatePeakTiming(unsigned long elapsedMs, unsigned long &peakMs) {
+  if (elapsedMs > peakMs) {
+    peakMs = elapsedMs;
+  }
+}
+
+static void logTcpTiming(const __FlashStringHelper *opLabel,
+                         unsigned long elapsedMs,
+                         unsigned long thresholdMs,
+                         int payloadBytes = -1) {
+  if (!debugMode) {
+    return;
+  }
+  if (elapsedMs <= thresholdMs) {
+    return;
+  }
+
+  Serial.print(F("[TCP-DBG] "));
+  Serial.print(opLabel);
+  Serial.print(F(" took "));
+  Serial.print(elapsedMs);
+  Serial.print(F(" ms"));
+  if (payloadBytes >= 0) {
+    Serial.print(F(" ("));
+    Serial.print(payloadBytes);
+    Serial.print(F(" B payload)"));
+  }
+  Serial.println();
+}
 
 // ─── TCP RX framing state machine ────────────────────────────────────────────
 enum RxState : uint8_t { RX_WAIT_TYPE, RX_WAIT_LEN, RX_READ_PAYLOAD };
@@ -354,6 +387,12 @@ static void printStatus() {
   Serial.print(F("  UART TX  : ")); Serial.print(bytesTxUart); Serial.println(F(" B"));
   Serial.print(F("  TCP  RX  : ")); Serial.print(bytesRxTcp);  Serial.println(F(" B"));
   Serial.print(F("  TCP  TX  : ")); Serial.print(bytesTxTcp);  Serial.println(F(" B"));
+  if (debugMode) {
+    Serial.println(F("--- TCP Timing ---"));
+    Serial.print(F("  Write Peak: ")); Serial.print(peakTcpWriteMs); Serial.println(F(" ms"));
+    Serial.print(F("  Read  Peak: ")); Serial.print(peakTcpReadMs); Serial.println(F(" ms"));
+    Serial.print(F("  Conn  Peak: ")); Serial.print(peakTcpConnectMs); Serial.println(F(" ms"));
+  }
   Serial.println(F("--- UART Health ---"));
   Serial.print(F("  RX Buf Overflows: ")); Serial.println(uartBufferOverflowCount);
   Serial.print(F("  RX Buf Peak Used: ")); Serial.print(uartRxBufPeakUsed);
@@ -417,6 +456,9 @@ static void processCli(const char *line) {
     lastErrorMs = 0;  // Also clear LED timer
     uartBufferOverflowCount = 0;
     uartRxBufPeakUsed = 0;
+    peakTcpWriteMs = 0;
+    peakTcpReadMs = 0;
+    peakTcpConnectMs = 0;
     Serial.println(F("[SYS] Counters cleared."));
   }
   else if (strncasecmp(line, "set ", 4) == 0) {
@@ -548,7 +590,13 @@ static void handleClientConnect() {
   Serial.print(cfg.port);
   Serial.println(F("..."));
 
+  // connect() can block while the stack performs ARP/TCP handshake.
+  unsigned long connectStartMs = millis();
   int result = tcpClient.connect(remote, cfg.port);
+  unsigned long connectElapsedMs = millis() - connectStartMs;
+  updatePeakTiming(connectElapsedMs, peakTcpConnectMs);
+  logTcpTiming(F("connect()"), connectElapsedMs, 0UL);
+
   if (result == 1) {
     tcpConnected = true;
     lastHbRecvMs = millis();
@@ -700,8 +748,16 @@ static void bridgeUartToTcp() {
     while (offset < uartBufLen) {
       uint8_t chunkLen = (uartBufLen - offset > 255) ? 255 : (uint8_t)(uartBufLen - offset);
       uint8_t header[2] = { FRAME_TYPE_DATA, chunkLen };
+
+      // Measure full framed write (header + payload).
+      unsigned long writeStartMs = millis();
       tcpClient.write(header, 2);
       size_t sent = tcpClient.write(uartBuf + offset, chunkLen);
+      unsigned long writeElapsedMs = millis() - writeStartMs;
+
+      updatePeakTiming(writeElapsedMs, peakTcpWriteMs);
+      logTcpTiming(F("write()"), writeElapsedMs, 5UL, chunkLen);
+
       bytesTxTcp += sent;
       if (sent < chunkLen) {
         noteError();
@@ -728,7 +784,15 @@ static void bridgeTcpToUart() {
 
   uint8_t chunk[TCP_RX_CHUNK];
   int toRead = min(avail, (int)TCP_RX_CHUNK);
+
+  // read() may block briefly depending on socket state and buffering.
+  unsigned long readStartMs = millis();
   int n = tcpClient.read(chunk, toRead);
+  unsigned long readElapsedMs = millis() - readStartMs;
+
+  updatePeakTiming(readElapsedMs, peakTcpReadMs);
+  logTcpTiming(F("read()"), readElapsedMs, 5UL);
+
   if (n <= 0) return;
 
   bytesRxTcp += n;
