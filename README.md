@@ -2,7 +2,7 @@
 
 This project turns two Arduino Mega 2560 + W5100 shield nodes into a transparent UART-over-TCP bridge. All UART data on `Serial1` is framed and sent over TCP, and incoming TCP frames are forwarded to `Serial1`. The bridge includes heartbeat monitoring, reconnect backoff, CLI configuration over USB serial, and EEPROM config storage.
 
-While it would be better to use a more performant MCU and Ethernet controller for higher baud rate support and reliability, at the time of writing we needed a solution now and had these components on hand. For more info review [Serial buffering, blocking, and reliability](#serial-buffering-blocking-and-reliability) below. In the future if we need better performance, I plan to move to a WT32-ETH01, ESP32-P4-ETH, or ESP32-ETH dev board.
+While it would be better to use a more performant MCU and Ethernet controller for higher baud rate support and reliability, at the time of writing, we needed a solution now and had these components on hand. For more info, review [Serial buffering, blocking, and reliability](#serial-buffering-blocking-and-reliability) below. In the future, if we need better performance, I plan to move to a WT32-ETH01, ESP32-P4-ETH, or ESP32-S3-ETH dev board.
 
 ![Example Image of Boards](example_boards.jpg)
 
@@ -22,6 +22,9 @@ While it would be better to use a more performant MCU and Ethernet controller fo
 - TCP data is parsed by a simple state machine and forwarded to Serial1.
 - Heartbeats are sent and expected; missing several causes reconnect.
 - Modifiable status LEDs using built-in (pin 13) for UART/TCP activity, pin 17 for TCP connection status, and pin 16 for errors.
+   - `PIN_LED_CONNECT` (P17) - Blink = TCP Connecting, Solid = TCP Connected
+   - `PIN_LED_ERROR` (P16) - On = Error within the last 10 seconds.
+   - `PIN_LED_ACTIVITY` (LED_BUILTIN) - Flashes on Serial1 or TCP Activity.
 - WDT enabled (4s)
 
 ## Hardware Requirements
@@ -44,14 +47,16 @@ Connect to the device over USB at **115200** baud to configure.
 - `defaults` - reset to defaults and reboot
 - `reboot` - immediate reboot
 - `clearerrors` - reset error/reconnect counters
-- `set debug <on|off>` - toggle debug logs
+- `set debug <on|off>` - toggle debug output
 
 ## Usage
-1. Configure one board as SERVER (`set role server`) and one as CLIENT (`set role client`) with IPs and MACs.
-   1. NOTE: The devices must be on the same subnet.
-2. Set the same port and baud rate on both boards (e.g., `set port 3000`, `set baud 9600`).
-3. Use `save` to write changes to EEPROM.
-4. Attach UART devices to `Serial1` (e.g., RS232 sensors/PLC).
+1. Configure one board as SERVER (`set role server`) and one as CLIENT (`set role client`)
+   1. NOTE: The devices must be on the same subnet, currently assumes a /24 subnet.
+2. Set the IP address for each board (e.g., on SERVER `set ip 192.168.1.100`)
+3. Set the remote IP address on each board to point to the other (e.g., on SERVER `set remote 192.168.1.101`)
+4. Set the same port and baud rate on both boards (e.g., `set port 3000`, `set baud 9600`).
+5. Use `save` to write changes to EEPROM.
+6. Attach UART devices to `Serial1` (e.g., RS232 sensors/PLC).
 
 
 ## VSCodium IDE Setup
@@ -72,13 +77,14 @@ pio run -t compiledb
 ```
 
 ## Serial buffering, blocking, and reliability
-- In platformio.ini we use, a build flag `-DSERIAL_RX_BUFFER_SIZE=1024` which increases the Arduino core software RX ring buffer for serial ports to 1024 bytes (from the default 64). This allows more incoming data to be buffered during blocking operations to avoid data loss.
-- During many blocking Ethernet waits (for example `connect()` polling), UART interrupts still run and continue storing bytes into the RX ring buffer.
-- Data is lost only if incoming bytes fill the RX ring buffer before the main loop drains it.
-- E.g. At 19.2k baud, a 1024-byte ring buffer fills in about 533.3 ms of continuous streaming data. Any blocking window longer than that can overflow Serial1 RX.
-- Increasing the buffer gives more headroom, but consumes more RAM. If needed, you can adjust the buffer size in `platformio.ini` to balance between reliability and memory usage. However keep RAM usage below ~70% to avoid instability.
+- In `platformio.ini` we use a build flag `-DSERIAL_RX_BUFFER_SIZE=1024` which increases the Arduino core software RX ring buffer for serial ports to 1024 bytes (from the default 64). This allows more incoming data to be buffered during blocking operations to avoid data loss.
+- During many blocking Ethernet waits (for example `connect()` polling), UART ISRs still run and continue storing bytes into the RX ring buffer.
+- Data is lost only if incoming bytes fill the RX ring buffer before the main loop drains it by sending over TCP.
+- E.g., at 19.2k baud, a 1024-byte ring buffer fills in about 533.3 ms of continuous streaming data. Any blocking window longer than that can overflow Serial1 RX.
+- Increasing the buffer gives more headroom, but consumes more RAM. If needed, you can adjust the buffer size in `platformio.ini` to balance between reliability and memory usage. However, keep RAM usage below ~70% to avoid instability.
 
-The table below shows the time it takes to fill the RX buffer at different baud rates and buffer sizes, under worse case continuous streaming data. If any operation blocks the main loop for longer than this duration, additional Serial1 data will be lost. This is only a real concern on unreliable networks or with very high baud rates. In practice, with a 1024 buffer and low baud rate, or sporadic serial traffic, the system should be adequate for most applications.
+The table below shows the time it takes to fill the RX buffer at different baud rates and buffer sizes, under worst-case continuous streaming data. If any operation blocks the main loop for longer than this duration, additional Serial1 data will be lost. This is only a real concern on unreliable networks or with very high baud rates or continuous streaming data. In practice, with a 1024 buffer and low baud rate, or sporadic serial traffic, the system should be adequate for most applications. If this is a concern, make sure to monitor the `UART Health` section of the `status` report for overruns and how close the buffer gets to full with `RX Buf Peak Used`.
+
 | Baud | Time @64B | Time @256B | Time @1024B (default) |
 |---:|---:|---:|---:|
 | 1200 | 533.3 ms | 2133.3 ms | 8533.3 ms |
@@ -91,7 +97,8 @@ The table below shows the time it takes to fill the RX buffer at different baud 
 
 
 # To-do / Improvements
-- [ ] Add optional gateway address for routing across subnets.
+- [ ] Add CLI config options for subnet mask and gateway, currently assumes a /24 subnet
+- [ ] Add DHCP option
 - [ ] Break out certain features/functions/sections into separate files for better modularity and readability.
 - [ ] Test 38.4k+ baud and if reliable, add as an option in the CLI.
 
