@@ -99,8 +99,11 @@ The table below shows the time it takes to fill the RX buffer at different baud 
 # To-do / Improvements
 - [ ] Add CLI config options for subnet mask and gateway, currently assumes a /24 subnet
 - [ ] Add DHCP option
+- [ ] Add query packet to query the status report of the remote device.
+- [ ] Log `uartRxBufPeakUsed` near full and `uartBufferOverflowCount` to debug serial immediately. 
 - [ ] Break out certain features/functions/sections into separate files for better modularity and readability.
 - [ ] Test 38.4k+ baud and if reliable, add as an option in the CLI.
+- [ ] EEPROM offset for worn out cells? This project is for old hardware after all.
 
 ## License
 
