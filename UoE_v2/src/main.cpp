@@ -8,11 +8,12 @@
 
 #include <SPI.h>
 #include <Ethernet.h>
-#include <EEPROM.h>
 #include <avr/wdt.h>
 
-// ─── Firmware Version ────────────────────────────────────────────────────────
-#define FW_VERSION "2.3.0"
+#include "fw_version.h"
+#include "config.h"
+#include "status.h"
+#include "cli.h"
 
 // ─── Pin Definitions ─────────────────────────────────────────────────────────
 #define PIN_LED_ACTIVITY  LED_BUILTIN   // Pin 13 - flash on UART/TCP activity
@@ -41,37 +42,6 @@
 #define BACKOFF_INIT_MS   1000
 #define BACKOFF_MAX_MS    10000  // Cap at 10s
 
-// ─── Heartbeat defaults ──────────────────────────────────────────────────────
-#define HB_DEFAULT_SEC    5
-#define HB_MISS_FACTOR    3         // Dead after 3x interval with no HB
-
-// ─── EEPROM Layout ───────────────────────────────────────────────────────────
-#define EEPROM_MAGIC      0xA5 // Identifies EEPROM containing valid config data
-#define EE_MAGIC          0   // 1 byte
-#define EE_ROLE           1   // 1 byte  (0=SERVER, 1=CLIENT)
-#define EE_MAC            2   // 6 bytes
-#define EE_IP             8   // 4 bytes
-#define EE_REMOTE_IP      12  // 4 bytes
-#define EE_PORT           16  // 2 bytes (uint16)
-#define EE_BAUD           18  // 4 bytes (uint32)
-#define EE_HB_SEC         22  // 1 byte
-#define EE_DEBUG          23  // 1 byte
-// Total: 24 bytes
-
-// ─── Runtime Config ──────────────────────────────────────────────────────────
-struct Config {
-  uint8_t  role;  // 0 = SERVER, 1 = CLIENT
-  uint8_t  mac[6];
-  uint8_t  ip[4];
-  uint8_t  remoteIp[4];
-  uint16_t port;
-  uint32_t baud;
-  uint8_t  hbIntervalSec;
-  uint8_t  debug;  // 0 = off, 1 = on
-};
-
-static Config cfg;
-
 // ─── Network Objects ─────────────────────────────────────────────────────────
 static EthernetServer *tcpServer = nullptr;
 static EthernetClient  tcpClient;
@@ -80,31 +50,28 @@ static EthernetClient  tcpClient;
 static uint8_t uartBuf[UART_BUF_SIZE];
 static uint16_t uartBufLen = 0;
 
-static char cliBuf[CLI_BUF_SIZE];
-static uint8_t cliLen = 0;
-
 // ─── Timing ──────────────────────────────────────────────────────────────────
 static uint32_t lastUartByteMs       = 0;
 static uint32_t lastHbSentMs         = 0;
 static uint32_t lastHbRecvMs         = 0;
 static uint32_t lastConnBlinkMs      = 0;
 static uint32_t activityOffMs        = 0;
-static uint32_t uptimeTotalSec       = 0;
-static uint32_t lastUptimeTickMs     = 0;
+uint32_t uptimeTotalSec              = 0;
+uint32_t lastUptimeTickMs            = 0;
 static uint32_t backoffMs            = BACKOFF_INIT_MS;
 static uint32_t lastConnectAttemptMs = 0;
-static uint32_t lastErrorMs          = 0;
+uint32_t lastErrorMs                 = 0;
 
 // ─── Stats ───────────────────────────────────────────────────────────────────
-static uint32_t reconnectCount = 0;
-static uint32_t errorCount     = 0;
-static uint32_t bytesRxUart    = 0;
-static uint32_t bytesTxUart    = 0;
-static uint32_t bytesRxTcp     = 0;
-static uint32_t bytesTxTcp     = 0;
-static uint32_t peakTcpWriteMs   = 0;
-static uint32_t peakTcpConnectMs = 0;
-static uint32_t peakTcpReadMs    = 0;
+uint32_t reconnectCount = 0;
+uint32_t errorCount     = 0;
+uint32_t bytesRxUart    = 0;
+uint32_t bytesTxUart    = 0;
+uint32_t bytesRxTcp     = 0;
+uint32_t bytesTxTcp     = 0;
+uint32_t peakTcpWriteMs   = 0;
+uint32_t peakTcpConnectMs = 0;
+uint32_t peakTcpReadMs    = 0;
 
 // UART RX ring buffer health:
 // NOTE: We cannot check the hardware overrun flag (DOR1 in UCSR1A) as the
@@ -112,14 +79,14 @@ static uint32_t peakTcpReadMs    = 0;
 // which clears DOR1 before our main loop can see it. Instead we detect overflow
 // at the ring buffer. When Serial1.available() reaches SERIAL_RX_BUFFER_SIZE-1
 // (max), the ISR silently discards incoming bytes.
-static uint32_t uartBufferOverflowCount = 0;
-static uint16_t uartRxBufPeakUsed       = 0;  // High-water mark
+uint32_t uartBufferOverflowCount = 0;
+uint16_t uartRxBufPeakUsed       = 0;  // High-water mark
 
 // ─── State ───────────────────────────────────────────────────────────────────
-static bool tcpConnected      = false;
+bool tcpConnected             = false;
 static bool prevTcpConnected  = false;
 static bool connLedState      = false;
-static bool ethLinkUp         = false;
+bool ethLinkUp                = false;
 
 #define debugMode (cfg.debug)
 
@@ -167,82 +134,24 @@ static inline void noteError() {
   lastErrorMs = millis();
 }
 
-static void rebootNow() {
+void rebootNow() {
   Serial.flush();
   wdt_enable(WDTO_15MS);
   while (1) {} // Wait for watchdog reset
 }
 
 // =============================================================================
-//  EEPROM helpers
-// =============================================================================
-
-static void loadDefaults() {
-  cfg.role = 0; // SERVER
-  // Default MAC: 12:34:56:78:AB:CD
-  cfg.mac[0] = 0x12; cfg.mac[1] = 0x34; cfg.mac[2] = 0x56;
-  cfg.mac[3] = 0x78; cfg.mac[4] = 0xAB; cfg.mac[5] = 0xCD;
-  // Default IPs: 192.168.254.100, remote=192.168.254.101
-  cfg.ip[0] = 192; cfg.ip[1] = 168;
-  cfg.ip[2] = 254; cfg.ip[3] = 100;
-  cfg.remoteIp[0] = 192; cfg.remoteIp[1] = 168;
-  cfg.remoteIp[2] = 254; cfg.remoteIp[3] = 101;
-  cfg.port = 3000;
-  cfg.baud = 19200;
-  cfg.hbIntervalSec = HB_DEFAULT_SEC;
-  cfg.debug = 0;
-}
-
-static void loadConfig() {
-  if (EEPROM.read(EE_MAGIC) != EEPROM_MAGIC) {
-    Serial.println(F("[EEPROM] No valid config found: loading defaults."));
-    loadDefaults();
-    return;
-  }
-  cfg.role = EEPROM.read(EE_ROLE);
-  for (uint8_t i = 0; i < 6; i++) cfg.mac[i] = EEPROM.read(EE_MAC + i);
-  for (uint8_t i = 0; i < 4; i++) cfg.ip[i]  = EEPROM.read(EE_IP + i);
-  for (uint8_t i = 0; i < 4; i++) cfg.remoteIp[i] = EEPROM.read(EE_REMOTE_IP + i);
-  cfg.port  = (uint16_t)EEPROM.read(EE_PORT) | ((uint16_t)EEPROM.read(EE_PORT + 1) << 8);
-  cfg.baud  = (uint32_t)EEPROM.read(EE_BAUD)
-            | ((uint32_t)EEPROM.read(EE_BAUD + 1) << 8)
-            | ((uint32_t)EEPROM.read(EE_BAUD + 2) << 16)
-            | ((uint32_t)EEPROM.read(EE_BAUD + 3) << 24);
-  cfg.hbIntervalSec = EEPROM.read(EE_HB_SEC);
-  if (cfg.hbIntervalSec == 0 || cfg.hbIntervalSec > 60) cfg.hbIntervalSec = HB_DEFAULT_SEC;
-  cfg.debug = (EEPROM.read(EE_DEBUG) == 1) ? 1 : 0;
-  Serial.println(F("[EEPROM] Valid config loaded!"));
-}
-
-static void saveConfig() {
-  EEPROM.update(EE_MAGIC, EEPROM_MAGIC);
-  EEPROM.update(EE_ROLE, cfg.role);
-  for (uint8_t i = 0; i < 6; i++) EEPROM.update(EE_MAC + i, cfg.mac[i]);
-  for (uint8_t i = 0; i < 4; i++) EEPROM.update(EE_IP + i, cfg.ip[i]);
-  for (uint8_t i = 0; i < 4; i++) EEPROM.update(EE_REMOTE_IP + i, cfg.remoteIp[i]);
-  EEPROM.update(EE_PORT,     (uint8_t)(cfg.port & 0xFF));
-  EEPROM.update(EE_PORT + 1, (uint8_t)(cfg.port >> 8));
-  EEPROM.update(EE_BAUD,     (uint8_t)(cfg.baud & 0xFF));
-  EEPROM.update(EE_BAUD + 1, (uint8_t)((cfg.baud >> 8) & 0xFF));
-  EEPROM.update(EE_BAUD + 2, (uint8_t)((cfg.baud >> 16) & 0xFF));
-  EEPROM.update(EE_BAUD + 3, (uint8_t)((cfg.baud >> 24) & 0xFF));
-  EEPROM.update(EE_HB_SEC, cfg.hbIntervalSec);
-  EEPROM.update(EE_DEBUG, cfg.debug);
-  Serial.println(F("[EEPROM] Config saved."));
-}
-
-// =============================================================================
 //  Print helper utils
 // =============================================================================
 
-static void printIP(const uint8_t *ip) {
+void printIP(const uint8_t *ip) {
   for (uint8_t i = 0; i < 4; i++) {
     Serial.print(ip[i]);
     if (i < 3) Serial.print('.');
   }
 }
 
-static void printMAC(const uint8_t *mac) {
+void printMAC(const uint8_t *mac) {
   for (uint8_t i = 0; i < 6; i++) {
     if (mac[i] < 0x10) Serial.print('0');
     Serial.print(mac[i], HEX);
@@ -250,7 +159,7 @@ static void printMAC(const uint8_t *mac) {
   }
 }
 
-static bool parseIP(const char *str, uint8_t *out) {
+bool parseIP(const char *str, uint8_t *out) {
   uint16_t octets[4];
   uint8_t count = 0;
   const char *p = str;
@@ -268,7 +177,7 @@ static bool parseIP(const char *str, uint8_t *out) {
   return true;
 }
 
-static bool parseMAC(const char *str, uint8_t *out) {
+bool parseMAC(const char *str, uint8_t *out) {
   // Accept XX:XX:XX:XX:XX:XX
   if (strlen(str) != 17) return false;
   for (uint8_t i = 0; i < 6; i++) {
@@ -332,217 +241,6 @@ static void updateErrorLed() {
   digitalWrite(PIN_LED_ERROR, recentError ? HIGH : LOW);
 }
 
-// =============================================================================
-//  Status display
-// =============================================================================
-
-static void updateUptime() {
-  uint32_t now = millis();
-
-  // Unsigned subtraction is overflow-safe, so this works when millis() wraps around after ~49 days.
-  uint32_t elapsed = (now - lastUptimeTickMs);
-
-  if (elapsed >= 1000UL) {
-    uint32_t secs = (elapsed / 1000UL);  // Whole seconds elapsed since last update.
-    uptimeTotalSec = (uptimeTotalSec + secs);
-    lastUptimeTickMs = (lastUptimeTickMs + (secs * 1000UL));
-  }
-}
-
-static void printUptime() {
-  uint32_t t = uptimeTotalSec;
-
-  // Calc days/hours/minutes/seconds
-  uint16_t d = (t / 86400UL);
-  t = (t % 86400UL);
-  uint8_t h = (t / 3600UL);
-  t = (t % 3600UL);
-  uint8_t m = (t / 60UL);
-  uint8_t s = (t % 60UL);
-
-  if (d > 0) {
-    Serial.print(d);
-    Serial.print(F("d "));
-  }
-
-  Serial.print(h);
-  Serial.print(F("h "));
-  Serial.print(m);
-  Serial.print(F("m "));
-  Serial.print(s);
-  Serial.print(F("s"));
-}
-
-static void printStatus() {
-  Serial.println(F("=== UART-over-Ethernet Bridge ==="));
-  Serial.print(F("  Firmware : v")); Serial.println(F(FW_VERSION));
-  Serial.print(F("  Role     : ")); Serial.println(cfg.role == 0 ? F("SERVER") : F("CLIENT"));
-  Serial.print(F("  MAC      : ")); printMAC(cfg.mac); Serial.println();
-  Serial.print(F("  IP       : ")); printIP(cfg.ip);   Serial.println();
-  Serial.print(F("  Remote   : ")); printIP(cfg.remoteIp); Serial.println();
-  Serial.print(F("  TCP Port : ")); Serial.println(cfg.port);
-  Serial.print(F("  UART Baud: ")); Serial.println(cfg.baud);
-  Serial.print(F("  HB Int.  : ")); Serial.print(cfg.hbIntervalSec); Serial.println(F(" s"));
-  Serial.print(F("  Debug    : ")); Serial.println(debugMode ? F("ON") : F("OFF"));
-  Serial.println(F("--- Network ---"));
-  Serial.print(F("  Eth Link : ")); Serial.println(ethLinkUp ? F("UP") : F("DOWN"));
-  Serial.print(F("  TCP      : ")); Serial.println(tcpConnected ? F("CONNECTED") : F("DISCONNECTED"));
-  Serial.print(F("  Reconnects: ")); Serial.println(reconnectCount);
-  Serial.print(F("  Errors    : ")); Serial.println(errorCount);
-  Serial.println(F("--- Data ---"));
-  Serial.print(F("  UART RX  : ")); Serial.print(bytesRxUart); Serial.println(F(" B"));
-  Serial.print(F("  UART TX  : ")); Serial.print(bytesTxUart); Serial.println(F(" B"));
-  Serial.print(F("  TCP  RX  : ")); Serial.print(bytesRxTcp);  Serial.println(F(" B"));
-  Serial.print(F("  TCP  TX  : ")); Serial.print(bytesTxTcp);  Serial.println(F(" B"));
-  if (debugMode) {
-    Serial.println(F("--- TCP Timing ---"));
-    Serial.print(F("  Write Peak: ")); Serial.print(peakTcpWriteMs); Serial.println(F(" ms"));
-    Serial.print(F("  Read  Peak: ")); Serial.print(peakTcpReadMs); Serial.println(F(" ms"));
-    Serial.print(F("  Conn  Peak: ")); Serial.print(peakTcpConnectMs); Serial.println(F(" ms"));
-  }
-  Serial.println(F("--- UART Health ---"));
-  Serial.print(F("  RX Buf Overflows: ")); Serial.println(uartBufferOverflowCount);
-  Serial.print(F("  RX Buf Peak Used: ")); Serial.print(uartRxBufPeakUsed);
-  Serial.print(F(" / ")); Serial.println(SERIAL_RX_BUFFER_SIZE);
-  Serial.println(F("-------------------"));
-  Serial.print(F("  Uptime   : ")); printUptime(); Serial.println();
-  Serial.println(F("================================="));
-}
-
-// =============================================================================
-//  CLI processor
-// =============================================================================
-
-static void printHelp() {
-  Serial.println(F("Commands:"));
-  Serial.println(F("  status               Show current config & stats"));
-  Serial.println(F("  set role <server|client>"));
-  Serial.println(F("  set ip <x.x.x.x>     Own IP address"));
-  Serial.println(F("  set remote <x.x.x.x> Peer IP address"));
-  Serial.println(F("  set mac <XX:XX:..>   Own MAC address"));
-  Serial.println(F("  set port <N>         TCP port"));
-  Serial.println(F("  set baud <N>         1200/2400/4800/9600/14400/19200"));
-  Serial.println(F("  set hbinterval <N>   Heartbeat interval (seconds)"));
-  Serial.println(F("  save                 Write config to EEPROM & reboot"));
-  Serial.println(F("  reboot               Reboot now"));
-  Serial.println(F("  defaults             Restore factory defaults & reboot"));
-  Serial.println(F("  clearerrors          Reset error/reconnect counters"));
-  Serial.println(F("  set debug <on|off>   Toggle verbose debug logging"));
-  Serial.println(F("  help                 Show this help"));
-}
-
-static void processCli(const char *line) {
-  // Trim leading spaces
-  while (*line == ' ') line++;
-  if (*line == '\0') return;
-
-  if (strcasecmp(line, "status") == 0) {
-    printStatus();
-  }
-  else if (strcasecmp(line, "help") == 0 || strcmp(line, "?") == 0) {
-    printHelp();
-  }
-  else if (strcasecmp(line, "reboot") == 0) {
-    Serial.println(F("[SYS] Rebooting..."));
-    rebootNow();
-  }
-  else if (strcasecmp(line, "defaults") == 0) {
-    loadDefaults();
-    saveConfig();
-    Serial.println(F("[SYS] Defaults restored. Rebooting..."));
-    rebootNow();
-  }
-  else if (strcasecmp(line, "save") == 0) {
-    saveConfig();
-    Serial.println(F("[SYS] Saved. Rebooting..."));
-    rebootNow();
-  }
-  else if (strcasecmp(line, "clearerrors") == 0) {
-    errorCount = 0;
-    reconnectCount = 0;
-    lastErrorMs = 0;  // Also clear LED timer
-    uartBufferOverflowCount = 0;
-    uartRxBufPeakUsed = 0;
-    peakTcpWriteMs = 0;
-    peakTcpReadMs = 0;
-    peakTcpConnectMs = 0;
-    Serial.println(F("[SYS] Counters cleared."));
-  }
-  else if (strncasecmp(line, "set ", 4) == 0) {
-    const char *arg = line + 4;
-
-    if (strncasecmp(arg, "role ", 5) == 0) {
-      const char *val = arg + 5;
-      if (strcasecmp(val, "server") == 0) { cfg.role = 0; Serial.println(F("[CFG] Role = SERVER")); }
-      else if (strcasecmp(val, "client") == 0) { cfg.role = 1; Serial.println(F("[CFG] Role = CLIENT")); }
-      else Serial.println(F("[ERR] Use: set role <server|client>"));
-    }
-    else if (strncasecmp(arg, "ip ", 3) == 0) {
-      if (parseIP(arg + 3, cfg.ip)) {
-        Serial.print(F("[CFG] IP = ")); printIP(cfg.ip); Serial.println();
-      } else Serial.println(F("[ERR] Invalid IP format."));
-    }
-    else if (strncasecmp(arg, "remote ", 7) == 0) {
-      if (parseIP(arg + 7, cfg.remoteIp)) {
-        Serial.print(F("[CFG] Remote = ")); printIP(cfg.remoteIp); Serial.println();
-      } else Serial.println(F("[ERR] Invalid IP format."));
-    }
-    else if (strncasecmp(arg, "mac ", 4) == 0) {
-      if (parseMAC(arg + 4, cfg.mac)) {
-        Serial.print(F("[CFG] MAC = ")); printMAC(cfg.mac); Serial.println();
-      } else Serial.println(F("[ERR] Invalid MAC format. Use XX:XX:XX:XX:XX:XX"));
-    }
-    else if (strncasecmp(arg, "port ", 5) == 0) {
-      long v = atol(arg + 5);
-      if (v > 0 && v <= 65535) {
-        cfg.port = (uint16_t)v;
-        Serial.print(F("[CFG] Port = ")); Serial.println(cfg.port);
-      } else Serial.println(F("[ERR] Port must be 1-65535."));
-    }
-    else if (strncasecmp(arg, "baud ", 5) == 0) {
-      long v = atol(arg + 5);
-      // Only standard baud rates up to 19200
-      if (v == 1200 || v == 2400 || v == 4800 || v == 9600 || v == 14400 || v == 19200) {
-        cfg.baud = (uint32_t)v;
-        Serial.print(F("[CFG] Baud = ")); Serial.println(cfg.baud);
-      } else Serial.println(F("[ERR] Baud must be: 1200, 2400, 4800, 9600, 14400, 19200"));
-    }
-    else if (strncasecmp(arg, "hbinterval ", 11) == 0) {
-      long v = atol(arg + 11);
-      if (v >= 1 && v <= 60) {
-        cfg.hbIntervalSec = (uint8_t)v;
-        Serial.print(F("[CFG] HB interval = ")); Serial.print(cfg.hbIntervalSec); Serial.println(F(" s"));
-      } else Serial.println(F("[ERR] HB interval must be 1-60."));
-    }
-    else if (strncasecmp(arg, "debug ", 6) == 0) {
-      const char *val = arg + 6;
-      if (strcasecmp(val, "on") == 0) { cfg.debug = 1; Serial.println(F("[CFG] Debug = ON")); }
-      else if (strcasecmp(val, "off") == 0) { cfg.debug = 0; Serial.println(F("[CFG] Debug = OFF")); }
-      else Serial.println(F("[ERR] Use: set debug <on|off>"));
-    }
-    else {
-      Serial.println(F("[ERR] Unknown parameter. Type 'help'."));
-    }
-  }
-  else {
-    Serial.println(F("[ERR] Unknown command. Type 'help'."));
-  }
-}
-
-static void pollCli() {
-  while (Serial.available()) {
-    char c = Serial.read();
-    if (c == '\r' || c == '\n') {
-      if (cliLen > 0) {
-        cliBuf[cliLen] = '\0';
-        processCli(cliBuf);
-        cliLen = 0;
-      }
-    } else if (cliLen < CLI_BUF_SIZE - 1) {
-      cliBuf[cliLen++] = c;
-    }
-  }
-}
 
 // =============================================================================
 //  TCP connection management
