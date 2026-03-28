@@ -1,3 +1,6 @@
+// LED module: activity/connect/error LED timing and update functions.
+// Centralizes LED pin assignments and timing constants.
+
 #pragma once
 
 #include <Arduino.h>

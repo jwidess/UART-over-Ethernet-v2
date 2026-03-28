@@ -1,3 +1,5 @@
+// Utility implementation for IP/MAC parsing and print helpers.
+
 #include <Arduino.h>
 
 #include "utils.h"

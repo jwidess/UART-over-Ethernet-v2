@@ -1,3 +1,5 @@
+// Config module implementation: EEPROM defaults/load/save behavior.
+
 #include <Arduino.h>
 #include <EEPROM.h>
 

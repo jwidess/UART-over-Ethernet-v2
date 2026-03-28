@@ -1,3 +1,5 @@
+// Config module: runtime settings structure plus EEPROM load/save APIs.
+
 #pragma once
 
 #include <Arduino.h>
