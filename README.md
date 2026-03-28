@@ -106,7 +106,6 @@ The table below shows the time it takes to fill the RX buffer at different baud 
 - [ ] Add DHCP option
 - [ ] Add query packet to query the status report of the remote device.
 - [ ] Log `uartRxBufPeakUsed` near full and `uartBufferOverflowCount` to debug serial immediately. 
-- [ ] Break out certain features/functions/sections into separate files for better modularity and readability.
 - [x] ~~Add 38.4k/57.6k/115.2k baud options in CLI with caution warning above 38.4k~~
 - [ ] EEPROM offset for worn out cells? This project is for old hardware after all.
 
