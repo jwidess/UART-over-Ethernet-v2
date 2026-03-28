@@ -1,18 +1,12 @@
+// CLI module implementation for Serial command polling and command handling.
+
 #include <Arduino.h>
 
 #include "cli.h"
 #include "config.h"
 #include "status.h"
+#include "shared_state.h"
 #include "utils.h"
-
-extern uint32_t errorCount;
-extern uint32_t reconnectCount;
-extern uint32_t lastErrorMs;
-extern uint32_t uartBufferOverflowCount;
-extern uint16_t uartRxBufPeakUsed;
-extern uint32_t peakTcpWriteMs;
-extern uint32_t peakTcpReadMs;
-extern uint32_t peakTcpConnectMs;
 
 void loadDefaults();
 void saveConfig();

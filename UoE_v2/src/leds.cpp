@@ -1,10 +1,9 @@
+// LED module implementation for activity flash, connect blink, and error state.
+
 #include <Arduino.h>
 
 #include "leds.h"
-
-extern bool tcpConnected;
-extern bool ethLinkUp;
-extern uint32_t lastErrorMs;
+#include "shared_state.h"
 
 static uint32_t lastConnBlinkMs = 0;
 static uint32_t activityOffMs = 0;

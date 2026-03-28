@@ -1,27 +1,13 @@
+// Status module implementation: uptime tracking and status reports.
+// Reads shared runtime counters/state and prints diagnostic summaries.
+
 #include <Arduino.h>
 
 #include "fw_version.h"
 #include "config.h"
 #include "status.h"
+#include "shared_state.h"
 #include "utils.h"
-
-extern bool ethLinkUp;
-extern bool tcpConnected;
-
-extern uint32_t reconnectCount;
-extern uint32_t errorCount;
-extern uint32_t bytesRxUart;
-extern uint32_t bytesTxUart;
-extern uint32_t bytesRxTcp;
-extern uint32_t bytesTxTcp;
-extern uint32_t peakTcpWriteMs;
-extern uint32_t peakTcpReadMs;
-extern uint32_t peakTcpConnectMs;
-extern uint32_t uartBufferOverflowCount;
-extern uint16_t uartRxBufPeakUsed;
-
-extern uint32_t uptimeTotalSec;
-extern uint32_t lastUptimeTickMs;
 
 void updateUptime() {
   uint32_t now = millis();
