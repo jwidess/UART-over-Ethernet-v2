@@ -510,9 +510,12 @@ void setup() {
   // Serial1 - RS-232 via MAX3232
   Serial1.begin(cfg.baud);
 
-  // Ethernet init (no gateway or subnet needed for direct IP)
+  // Ethernet init with explicit subnet/gateway from config.
   IPAddress myIP(cfg.ip[0], cfg.ip[1], cfg.ip[2], cfg.ip[3]);
-  Ethernet.begin(cfg.mac, myIP);
+  IPAddress subnet(cfg.subnet[0], cfg.subnet[1], cfg.subnet[2], cfg.subnet[3]);
+  IPAddress gateway(cfg.gateway[0], cfg.gateway[1], cfg.gateway[2], cfg.gateway[3]);
+  IPAddress dns(0, 0, 0, 0);
+  Ethernet.begin(cfg.mac, myIP, dns, gateway, subnet);
 
   // Check hardware
   if (Ethernet.hardwareStatus() == EthernetNoHardware) {

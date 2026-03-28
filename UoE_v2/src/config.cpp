@@ -15,8 +15,47 @@
 #define EE_BAUD           18
 #define EE_HB_SEC         22
 #define EE_DEBUG          23
+#define EE_SUBNET         24
+#define EE_GATEWAY        28
+#define EE_NETCFG_VALID   32
+
+#define NETCFG_VALID_MAGIC 0x5A
 
 Config cfg;
+
+static bool isAllFF(const uint8_t *buf, uint8_t len) {
+  for (uint8_t i = 0; i < len; i++) {
+    if (buf[i] != 0xFF) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static void setDefaultSubnetAndGateway() {
+  // Default subnet: /24
+  cfg.subnet[0] = 255; cfg.subnet[1] = 255;
+  cfg.subnet[2] = 255; cfg.subnet[3] = 0;
+
+  // Default gateway: none (direct link)
+  cfg.gateway[0] = 0; cfg.gateway[1] = 0;
+  cfg.gateway[2] = 0; cfg.gateway[3] = 0;
+}
+
+static bool isValidSubnetMask(const uint8_t *maskBytes) {
+  uint32_t mask = ((uint32_t)maskBytes[0] << 24)
+                | ((uint32_t)maskBytes[1] << 16)
+                | ((uint32_t)maskBytes[2] << 8)
+                | ((uint32_t)maskBytes[3]);
+
+  if (mask == 0) {
+    return false;
+  }
+
+  // Valid mask is contiguous ones from MSB followed by zeros.
+  uint32_t inv = ~mask;
+  return (inv & (inv + 1UL)) == 0;
+}
 
 void loadDefaults() {
   cfg.role = 0;  // SERVER
@@ -26,6 +65,7 @@ void loadDefaults() {
   // Default IPs: 192.168.254.100, remote=192.168.254.101
   cfg.ip[0] = 192; cfg.ip[1] = 168;
   cfg.ip[2] = 254; cfg.ip[3] = 100;
+  setDefaultSubnetAndGateway();
   cfg.remoteIp[0] = 192; cfg.remoteIp[1] = 168;
   cfg.remoteIp[2] = 254; cfg.remoteIp[3] = 101;
   cfg.port = 3000;
@@ -52,6 +92,27 @@ void loadConfig() {
   cfg.hbIntervalSec = EEPROM.read(EE_HB_SEC);
   if (cfg.hbIntervalSec == 0 || cfg.hbIntervalSec > 60) cfg.hbIntervalSec = HB_DEFAULT_SEC;
   cfg.debug = (EEPROM.read(EE_DEBUG) == 1) ? 1 : 0;
+
+  // Backward compatibility: old EEPROM wont have network marker.
+  if (EEPROM.read(EE_NETCFG_VALID) == NETCFG_VALID_MAGIC) {
+    for (uint8_t i = 0; i < 4; i++) cfg.subnet[i] = EEPROM.read(EE_SUBNET + i);
+    for (uint8_t i = 0; i < 4; i++) cfg.gateway[i] = EEPROM.read(EE_GATEWAY + i);
+
+    if (!isValidSubnetMask(cfg.subnet)) {
+      setDefaultSubnetAndGateway();
+    }
+
+    // Treat null/broadcast gateway as "no gateway" for direct link setups.
+    if (isAllFF(cfg.gateway, 4)
+        || (cfg.gateway[0] == 255 && cfg.gateway[1] == 255
+            && cfg.gateway[2] == 255 && cfg.gateway[3] == 255)) {
+      cfg.gateway[0] = 0; cfg.gateway[1] = 0;
+      cfg.gateway[2] = 0; cfg.gateway[3] = 0;
+    }
+  } else {
+    setDefaultSubnetAndGateway();
+  }
+
   Serial.println(F("[EEPROM] Valid config loaded!"));
 }
 
@@ -60,6 +121,8 @@ void saveConfig() {
   EEPROM.update(EE_ROLE, cfg.role);
   for (uint8_t i = 0; i < 6; i++) EEPROM.update(EE_MAC + i, cfg.mac[i]);
   for (uint8_t i = 0; i < 4; i++) EEPROM.update(EE_IP + i, cfg.ip[i]);
+  for (uint8_t i = 0; i < 4; i++) EEPROM.update(EE_SUBNET + i, cfg.subnet[i]);
+  for (uint8_t i = 0; i < 4; i++) EEPROM.update(EE_GATEWAY + i, cfg.gateway[i]);
   for (uint8_t i = 0; i < 4; i++) EEPROM.update(EE_REMOTE_IP + i, cfg.remoteIp[i]);
   EEPROM.update(EE_PORT, (uint8_t)(cfg.port & 0xFF));
   EEPROM.update(EE_PORT + 1, (uint8_t)(cfg.port >> 8));
@@ -69,5 +132,6 @@ void saveConfig() {
   EEPROM.update(EE_BAUD + 3, (uint8_t)((cfg.baud >> 24) & 0xFF));
   EEPROM.update(EE_HB_SEC, cfg.hbIntervalSec);
   EEPROM.update(EE_DEBUG, cfg.debug);
+  EEPROM.update(EE_NETCFG_VALID, NETCFG_VALID_MAGIC);
   Serial.println(F("[EEPROM] Config saved."));
 }

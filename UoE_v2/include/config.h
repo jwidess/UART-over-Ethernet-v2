@@ -12,6 +12,8 @@ struct Config {
   uint8_t role;  // 0 = SERVER, 1 = CLIENT
   uint8_t mac[6];
   uint8_t ip[4];
+  uint8_t subnet[4];
+  uint8_t gateway[4];
   uint8_t remoteIp[4];
   uint16_t port;
   uint32_t baud;

@@ -15,7 +15,7 @@ While it would be better to use a more performant MCU and Ethernet controller fo
 ## How it works
 - Startup loads config from EEPROM (magic check, otherwise defaults).
 - Initializes Serial0 (115200) for CLI and debug, Serial1 for UART data.
-- Ethernet is initialized with local MAC/IP and remote IP.
+- Ethernet is initialized with local MAC/IP, subnet mask, gateway, and remote IP.
 - Server mode: listens on configured TCP port and accepts one client connection.
 - Client mode: connects to remote IP/port and retries with exponential backoff.
 - Data from Serial1 is buffered, framed (`[D|H][len][payload]`), and sent over TCP.
@@ -38,6 +38,8 @@ Connect to the device over USB at **115200** baud to configure.
 - `status` - print current settings and runtime stats
 - `set role <server|client>`
 - `set ip <x.x.x.x>`
+- `set subnet <x.x.x.x>`
+- `set gateway <x.x.x.x>`
 - `set remote <x.x.x.x>`
 - `set mac <XX:XX:XX:XX:XX:XX>`
 - `set port <N>`
@@ -51,7 +53,7 @@ Connect to the device over USB at **115200** baud to configure.
 
 ## Usage
 1. Configure one board as SERVER (`set role server`) and one as CLIENT (`set role client`)
-   1. NOTE: The devices must be on the same subnet, currently assumes a /24 subnet.
+   1. NOTE: Defaults are subnet `255.255.255.0` and gateway `0.0.0.0` (no gateway). Change with `set subnet` and `set gateway` if needed.
 2. Set the IP address for each board (e.g., on SERVER `set ip 192.168.1.100`)
 3. Set the remote IP address on each board to point to the other (e.g., on SERVER `set remote 192.168.1.101`)
 4. Set the same port and baud rate on both boards (e.g., `set port 3000`, `set baud 9600`).
@@ -97,7 +99,7 @@ The table below shows the time it takes to fill the RX buffer at different baud 
 
 
 # To-do / Improvements
-- [ ] Add CLI config options for subnet mask and gateway, currently assumes a /24 subnet
+- [x] ~~Add CLI config options for subnet mask and gateway~~
 - [ ] Add DHCP option
 - [ ] Add query packet to query the status report of the remote device.
 - [ ] Log `uartRxBufPeakUsed` near full and `uartBufferOverflowCount` to debug serial immediately. 

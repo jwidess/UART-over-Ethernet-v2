@@ -52,6 +52,8 @@ void printStatus() {
   Serial.print(F("  Role     : ")); Serial.println(cfg.role == 0 ? F("SERVER") : F("CLIENT"));
   Serial.print(F("  MAC      : ")); printMAC(cfg.mac); Serial.println();
   Serial.print(F("  IP       : ")); printIP(cfg.ip); Serial.println();
+  Serial.print(F("  Subnet   : ")); printIP(cfg.subnet); Serial.println();
+  Serial.print(F("  Gateway  : ")); printIP(cfg.gateway); Serial.println();
   Serial.print(F("  Remote   : ")); printIP(cfg.remoteIp); Serial.println();
   Serial.print(F("  TCP Port : ")); Serial.println(cfg.port);
   Serial.print(F("  UART Baud: ")); Serial.println(cfg.baud);

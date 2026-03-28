@@ -20,6 +20,8 @@ static void printHelp() {
   Serial.println(F("  status               Show current config & stats"));
   Serial.println(F("  set role <server|client>"));
   Serial.println(F("  set ip <x.x.x.x>     Own IP address"));
+  Serial.println(F("  set subnet <x.x.x.x> Subnet mask"));
+  Serial.println(F("  set gateway <x.x.x.x> Default gateway"));
   Serial.println(F("  set remote <x.x.x.x> Peer IP address"));
   Serial.println(F("  set mac <XX:XX:..>   Own MAC address"));
   Serial.println(F("  set port <N>         TCP port"));
@@ -88,6 +90,16 @@ static void processCli(const char *line) {
       if (parseIP(arg + 7, cfg.remoteIp)) {
         Serial.print(F("[CFG] Remote = ")); printIP(cfg.remoteIp); Serial.println();
       } else Serial.println(F("[ERR] Invalid IP format."));
+    }
+    else if (strncasecmp(arg, "subnet ", 7) == 0) {
+      if (parseIP(arg + 7, cfg.subnet)) {
+        Serial.print(F("[CFG] Subnet = ")); printIP(cfg.subnet); Serial.println();
+      } else Serial.println(F("[ERR] Invalid subnet format."));
+    }
+    else if (strncasecmp(arg, "gateway ", 8) == 0) {
+      if (parseIP(arg + 8, cfg.gateway)) {
+        Serial.print(F("[CFG] Gateway = ")); printIP(cfg.gateway); Serial.println();
+      } else Serial.println(F("[ERR] Invalid gateway format."));
     }
     else if (strncasecmp(arg, "mac ", 4) == 0) {
       if (parseMAC(arg + 4, cfg.mac)) {
