@@ -23,6 +23,9 @@ struct Config {
 
 extern Config cfg;
 
+bool isSupportedUartBaud(uint32_t baud);
+bool isHighRiskUartBaud(uint32_t baud);
+
 void loadDefaults();
 void loadConfig();
 void saveConfig();

@@ -23,6 +23,22 @@
 
 Config cfg;
 
+bool isSupportedUartBaud(uint32_t baud) {
+  return baud == 1200
+      || baud == 2400
+      || baud == 4800
+      || baud == 9600
+      || baud == 14400
+      || baud == 19200
+      || baud == 38400
+      || baud == 57600
+      || baud == 115200;
+}
+
+bool isHighRiskUartBaud(uint32_t baud) {
+  return baud > 38400;
+}
+
 static bool isAllFF(const uint8_t *buf, uint8_t len) {
   for (uint8_t i = 0; i < len; i++) {
     if (buf[i] != 0xFF) {
@@ -89,6 +105,7 @@ void loadConfig() {
            | ((uint32_t)EEPROM.read(EE_BAUD + 1) << 8)
            | ((uint32_t)EEPROM.read(EE_BAUD + 2) << 16)
            | ((uint32_t)EEPROM.read(EE_BAUD + 3) << 24);
+  if (!isSupportedUartBaud(cfg.baud)) cfg.baud = 19200;
   cfg.hbIntervalSec = EEPROM.read(EE_HB_SEC);
   if (cfg.hbIntervalSec == 0 || cfg.hbIntervalSec > 60) cfg.hbIntervalSec = HB_DEFAULT_SEC;
   cfg.debug = (EEPROM.read(EE_DEBUG) == 1) ? 1 : 0;

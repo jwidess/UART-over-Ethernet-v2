@@ -56,7 +56,12 @@ void printStatus() {
   Serial.print(F("  Gateway  : ")); printIP(cfg.gateway); Serial.println();
   Serial.print(F("  Remote   : ")); printIP(cfg.remoteIp); Serial.println();
   Serial.print(F("  TCP Port : ")); Serial.println(cfg.port);
-  Serial.print(F("  UART Baud: ")); Serial.println(cfg.baud);
+  Serial.print(F("  UART Baud: "));
+  Serial.print(cfg.baud);
+  if (isHighRiskUartBaud(cfg.baud)) {
+    Serial.print(F(" (WARN: >38400 may lose data during blocking ops)"));
+  }
+  Serial.println();
   Serial.print(F("  HB Int.  : ")); Serial.print(cfg.hbIntervalSec); Serial.println(F(" s"));
   Serial.print(F("  Debug    : ")); Serial.println(cfg.debug ? F("ON") : F("OFF"));
   Serial.println(F("--- Network ---"));

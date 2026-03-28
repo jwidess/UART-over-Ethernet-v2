@@ -7,7 +7,7 @@ While it would be better to use a more performant MCU and Ethernet controller fo
 ![Example Image of Boards](example_boards.jpg)
 
 ## Features
-- Transparent serial bridge: Serial data sent to the Serial1 port on one board is delivered to the Serial1 port on the other, and vice versa. Supports baud rates up to 19.2k bps and NUL bytes in the data stream. Review the [Serial buffering, blocking, and reliability](#serial-buffering-blocking-and-reliability) section below for details on performance and reliability.
+- Transparent serial bridge: Serial data sent to the Serial1 port on one board is delivered to the Serial1 port on the other, and vice versa. Supports baud rates up to 115.2k bps and NUL bytes in the data stream. Review the [Serial buffering, blocking, and reliability](#serial-buffering-blocking-and-reliability) section below for details on performance and reliability.
 - Handles connection loss and automatic reconnection.
 - Buffers and transmits data line-by-line (on \<CR>, \<LF>, or both) or after a short idle timeout to optimize throughput on streams without line breaks.
 - Configuration and debug output on USB Serial for monitoring and troubleshooting.
@@ -43,7 +43,8 @@ Connect to the device over USB at **115200** baud to configure.
 - `set remote <x.x.x.x>`
 - `set mac <XX:XX:XX:XX:XX:XX>`
 - `set port <N>`
-- `set baud <1200|2400|4800|9600|14400|19200>`
+- `set baud <1200|2400|4800|9600|14400|19200|38400|57600|115200>`
+   - Warning: baud rates above 38400 may lose data during blocking operations; use with caution.
 - `set hbinterval <1..60>`
 - `save` - save config to EEPROM and reboot
 - `defaults` - reset to defaults and reboot
@@ -96,6 +97,8 @@ The table below shows the time it takes to fill the RX buffer at different baud 
 | 14400 | 44.4 ms | 177.8 ms | 711.1 ms |
 | 19200 | 33.3 ms | 133.3 ms | 533.3 ms |
 | 38400 | 16.7 ms | 66.7 ms | 266.7 ms |
+| 57600 | 11.1 ms | 44.4 ms | 177.8 ms |
+| 115200 | 5.6 ms | 22.2 ms | 88.9 ms |
 
 
 # To-do / Improvements
@@ -104,7 +107,7 @@ The table below shows the time it takes to fill the RX buffer at different baud 
 - [ ] Add query packet to query the status report of the remote device.
 - [ ] Log `uartRxBufPeakUsed` near full and `uartBufferOverflowCount` to debug serial immediately. 
 - [ ] Break out certain features/functions/sections into separate files for better modularity and readability.
-- [ ] Test 38.4k+ baud and if reliable, add as an option in the CLI.
+- [x] ~~Add 38.4k/57.6k/115.2k baud options in CLI with caution warning above 38.4k~~
 - [ ] EEPROM offset for worn out cells? This project is for old hardware after all.
 
 ## License

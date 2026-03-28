@@ -25,7 +25,8 @@ static void printHelp() {
   Serial.println(F("  set remote <x.x.x.x> Peer IP address"));
   Serial.println(F("  set mac <XX:XX:..>   Own MAC address"));
   Serial.println(F("  set port <N>         TCP port"));
-  Serial.println(F("  set baud <N>         1200/2400/4800/9600/14400/19200"));
+  Serial.println(F("  set baud <N>         1200/2400/4800/9600/14400/19200/38400/57600/115200"));
+  Serial.println(F("    - WARN: baud rates >38400 increase risk of data loss during blocking ops. Use with caution."));
   Serial.println(F("  set hbinterval <N>   Heartbeat interval (seconds)"));
   Serial.println(F("  save                 Write config to EEPROM & reboot"));
   Serial.println(F("  reboot               Reboot now"));
@@ -115,11 +116,13 @@ static void processCli(const char *line) {
     }
     else if (strncasecmp(arg, "baud ", 5) == 0) {
       long v = atol(arg + 5);
-      // Only standard baud rates up to 19200
-      if (v == 1200 || v == 2400 || v == 4800 || v == 9600 || v == 14400 || v == 19200) {
+      if (isSupportedUartBaud((uint32_t)v)) {
         cfg.baud = (uint32_t)v;
         Serial.print(F("[CFG] Baud = ")); Serial.println(cfg.baud);
-      } else Serial.println(F("[ERR] Baud must be: 1200, 2400, 4800, 9600, 14400, 19200"));
+        if (isHighRiskUartBaud(cfg.baud)) {
+          Serial.println(F("[WARN] Baud >38400 may lose data during blocking operations. Use with caution."));
+        }
+      } else Serial.println(F("[ERR] Baud must be: 1200, 2400, 4800, 9600, 14400, 19200, 38400, 57600, 115200"));
     }
     else if (strncasecmp(arg, "hbinterval ", 11) == 0) {
       long v = atol(arg + 11);
