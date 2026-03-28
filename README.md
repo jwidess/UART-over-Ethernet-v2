@@ -1,6 +1,6 @@
 # UART-over-Ethernet-v2
 
-This project turns two Arduino Mega 2560 + W5100 shield nodes into a transparent UART-over-TCP bridge. All UART data on `Serial1` is framed and sent over TCP, and incoming TCP frames are forwarded to `Serial1`. The bridge includes heartbeat monitoring, reconnect backoff, CLI configuration over USB serial, and EEPROM config storage.
+This project turns two Arduino Mega 2560 + W5100 shield nodes into a transparent UART-over-TCP bridge. All UART data on `Serial1` is framed and sent over TCP, and incoming TCP frames are forwarded to `Serial1`. The bridge includes heartbeat monitoring, reconnect backoff, CLI configuration over USB serial, EEPROM config storage, and remote status reporting.
 
 While it would be better to use a more performant MCU and Ethernet controller for higher baud rate support and reliability, at the time of writing, we needed a solution now and had these components on hand. For more info, review [Serial buffering, blocking, and reliability](#serial-buffering-blocking-and-reliability) below. In the future, if we need better performance, I plan to move to a WT32-ETH01, ESP32-P4-ETH, or ESP32-S3-ETH dev board.
 
@@ -18,7 +18,8 @@ While it would be better to use a more performant MCU and Ethernet controller fo
 - Ethernet is initialized with local MAC/IP, subnet mask, gateway, and remote IP.
 - Server mode: listens on configured TCP port and accepts one client connection.
 - Client mode: connects to remote IP/port and retries with exponential backoff.
-- Data from Serial1 is buffered, framed (`[D|H][len][payload]`), and sent over TCP.
+- Data from Serial1 is buffered, framed (`[D|H|S|R][len][payload]`), and sent over TCP.
+   - Frame types: `D`=Data, `H`=Heartbeat, `S`=Status Request, `R`=Status Response
 - TCP data is parsed by a simple state machine and forwarded to Serial1.
 - `get remote status` sends a control frame request and receives a compact remote health/status response.
 - Heartbeats are sent and expected; missing several causes reconnect.
