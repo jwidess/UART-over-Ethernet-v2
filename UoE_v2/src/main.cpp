@@ -243,7 +243,9 @@ static void sendHeartbeat() {
     uint8_t hbFrame[2] = { FRAME_TYPE_HB, 0x00 };
     tcpClient.write(hbFrame, 2);
     lastHbSentMs = now;
-    Serial.println(F("[HB-DBG] Sent heartbeat"));
+    if (debugMode) {
+      Serial.println(F("[HB-DBG] Sent heartbeat"));
+    }
   }
 }
 
@@ -413,7 +415,9 @@ static void bridgeTcpToUart() {
           // Zero length frame, heartbeat or empty data
           if (rxFrameType == FRAME_TYPE_HB) {
             lastHbRecvMs = millis();
-            Serial.println(F("[HB-DBG] Received heartbeat"));
+            if (debugMode) {
+              Serial.println(F("[HB-DBG] Received heartbeat"));
+            }
           }
           rxState = RX_WAIT_TYPE;
         } else {
