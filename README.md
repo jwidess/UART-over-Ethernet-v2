@@ -20,6 +20,7 @@ While it would be better to use a more performant MCU and Ethernet controller fo
 - Client mode: connects to remote IP/port and retries with exponential backoff.
 - Data from Serial1 is buffered, framed (`[D|H][len][payload]`), and sent over TCP.
 - TCP data is parsed by a simple state machine and forwarded to Serial1.
+- `get remote status` sends a control frame request and receives a compact remote health/status response.
 - Heartbeats are sent and expected; missing several causes reconnect.
 - Modifiable status LEDs using built-in (pin 13) for UART/TCP activity, pin 17 for TCP connection status, and pin 16 for errors.
    - `PIN_LED_CONNECT` (P17) - Blink = TCP Connecting, Solid = TCP Connected
@@ -36,6 +37,7 @@ While it would be better to use a more performant MCU and Ethernet controller fo
 Connect to the device over USB at **115200** baud to configure.
 **Supported commands:**
 - `status` - print current settings and runtime stats
+- `get remote status` - request and display remote board status over TCP
 - `set role <server|client>`
 - `set ip <x.x.x.x>`
 - `set subnet <x.x.x.x>`
@@ -104,7 +106,7 @@ The table below shows the time it takes to fill the RX buffer at different baud 
 # To-do / Improvements
 - [x] ~~Add CLI config options for subnet mask and gateway~~
 - [ ] Add DHCP option
-- [ ] Add query packet to query the status report of the remote device.
+- [x] ~~Add query packet to query the status report of the remote device.~~
 - [ ] Log `uartRxBufPeakUsed` near full and `uartBufferOverflowCount` to debug serial immediately. 
 - [x] ~~Add 38.4k/57.6k/115.2k baud options in CLI with caution warning above 38.4k~~
 - [ ] EEPROM offset for worn out cells? This project is for old hardware after all.

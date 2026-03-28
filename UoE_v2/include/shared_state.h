@@ -4,6 +4,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "status.h"
 
 extern bool tcpConnected;
 extern bool ethLinkUp;
@@ -23,3 +24,8 @@ extern uint32_t peakTcpConnectMs;
 extern uint32_t peakTcpReadMs;
 extern uint32_t uartBufferOverflowCount;
 extern uint16_t uartRxBufPeakUsed;
+
+extern bool remoteStatusRequestPending;
+extern bool remoteStatusResponseReady;
+extern uint32_t remoteStatusRequestStartMs;
+extern RemoteStatusPayload remoteStatusLast;

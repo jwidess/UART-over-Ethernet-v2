@@ -30,6 +30,8 @@
 // This allows for NUL bytes to pass through the data stream.
 #define FRAME_TYPE_DATA   0x44      // 'D' data frame
 #define FRAME_TYPE_HB     0x48      // 'H' heartbeat frame (LEN=0, no payload)
+#define FRAME_TYPE_STATUS_REQ 0x53   // 'S' request remote status
+#define FRAME_TYPE_STATUS_RSP 0x52   // 'R' response with remote status payload
 
 // ─── Client reconnect back-off ───────────────────────────────────────────────
 #define BACKOFF_INIT_MS   1000
@@ -72,6 +74,11 @@ uint32_t peakTcpReadMs    = 0;
 // (max), the ISR silently discards incoming bytes.
 uint32_t uartBufferOverflowCount = 0;
 uint16_t uartRxBufPeakUsed       = 0;  // High-water mark
+
+bool remoteStatusRequestPending  = false;
+bool remoteStatusResponseReady   = false;
+uint32_t remoteStatusRequestStartMs = 0;
+RemoteStatusPayload remoteStatusLast = {};
 
 // ─── State ───────────────────────────────────────────────────────────────────
 bool tcpConnected             = false;
@@ -122,6 +129,45 @@ static uint8_t   rxPayload[UART_BUF_SIZE];
 static inline void noteError() {
   errorCount++;
   lastErrorMs = millis();
+}
+
+bool sendRemoteStatusRequest() {
+  if (!tcpConnected) {
+    return false;
+  }
+
+  uint8_t reqFrame[2] = { FRAME_TYPE_STATUS_REQ, 0x00 };
+  size_t sent = tcpClient.write(reqFrame, 2);
+  if (sent != 2) {
+    noteError();
+    return false;
+  }
+
+  return true;
+}
+
+static void sendRemoteStatusResponse() {
+  if (!tcpConnected) {
+    return;
+  }
+
+  if (debugMode) {
+    Serial.println(F("[SYS] Remote status request received!"));
+  }
+
+  RemoteStatusPayload payload;
+  buildRemoteStatusPayload(payload);
+
+  uint8_t header[2] = { FRAME_TYPE_STATUS_RSP, (uint8_t)sizeof(RemoteStatusPayload) };
+  tcpClient.write(header, 2);
+  size_t sent = tcpClient.write((const uint8_t *)&payload, sizeof(RemoteStatusPayload));
+  if (sent != sizeof(RemoteStatusPayload)) {
+    noteError();
+    Serial.print(F("[WARN] Partial remote status frame write: "));
+    Serial.print(sent);
+    Serial.print('/');
+    Serial.println(sizeof(RemoteStatusPayload));
+  }
 }
 
 void rebootNow() {
@@ -397,7 +443,10 @@ static void bridgeTcpToUart() {
     uint8_t b = chunk[i];
     switch (rxState) {
       case RX_WAIT_TYPE:
-        if (b == FRAME_TYPE_DATA || b == FRAME_TYPE_HB) {
+        if (b == FRAME_TYPE_DATA
+            || b == FRAME_TYPE_HB
+            || b == FRAME_TYPE_STATUS_REQ
+            || b == FRAME_TYPE_STATUS_RSP) {
           rxFrameType = b;
           rxState = RX_WAIT_LEN;
         } else {
@@ -417,6 +466,13 @@ static void bridgeTcpToUart() {
             lastHbRecvMs = millis();
             if (debugMode) {
               Serial.println(F("[HB-DBG] Received heartbeat"));
+            }
+          } else if (rxFrameType == FRAME_TYPE_STATUS_REQ) {
+            sendRemoteStatusResponse();
+          } else if (rxFrameType == FRAME_TYPE_STATUS_RSP) {
+            noteError();
+            if (debugMode) {
+              Serial.println(F("[FRAME-DBG] Invalid empty remote status response."));
             }
           }
           rxState = RX_WAIT_TYPE;
@@ -448,6 +504,18 @@ static void bridgeTcpToUart() {
             flashActivity();
           } else if (rxFrameType == FRAME_TYPE_HB) {
             lastHbRecvMs = millis();
+          } else if (rxFrameType == FRAME_TYPE_STATUS_REQ) {
+            sendRemoteStatusResponse();
+          } else if (rxFrameType == FRAME_TYPE_STATUS_RSP) {
+            if (parseRemoteStatusPayload(rxPayload, rxFrameLen, remoteStatusLast)) {
+              remoteStatusResponseReady = true;
+              remoteStatusRequestPending = false;
+            } else {
+              noteError();
+              if (debugMode) {
+                Serial.println(F("[FRAME-DBG] Invalid remote status payload."));
+              }
+            }
           }
           rxState = RX_WAIT_TYPE;
         }

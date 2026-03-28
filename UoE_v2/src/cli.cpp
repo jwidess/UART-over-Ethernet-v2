@@ -11,13 +11,40 @@
 void loadDefaults();
 void saveConfig();
 void rebootNow();
+bool sendRemoteStatusRequest();
+
+#define REMOTE_STATUS_TIMEOUT_FLOOR_MS 2000UL
 
 static char cliBuf[CLI_BUF_SIZE];
 static uint8_t cliLen = 0;
 
+static uint32_t getRemoteStatusTimeoutMs() {
+  uint32_t hbBased = (uint32_t)cfg.hbIntervalSec * 2000UL;  // 2x heartbeat interval
+  return (hbBased > REMOTE_STATUS_TIMEOUT_FLOOR_MS) ? hbBased : REMOTE_STATUS_TIMEOUT_FLOOR_MS;
+}
+
+static void checkRemoteStatusCompletion() {
+  if (remoteStatusResponseReady) {
+    remoteStatusResponseReady = false;
+    remoteStatusRequestPending = false;
+    Serial.println(F("[SYS] Remote status response received."));
+    printRemoteStatus(remoteStatusLast);
+  }
+
+  if (remoteStatusRequestPending) {
+    uint32_t now = millis();
+    uint32_t elapsed = now - remoteStatusRequestStartMs;
+    if (elapsed > getRemoteStatusTimeoutMs()) {
+      remoteStatusRequestPending = false;
+      Serial.println(F("[ERR] Remote status request timed out (remote may be disconnected or running older firmware)."));
+    }
+  }
+}
+
 static void printHelp() {
   Serial.println(F("Commands:"));
   Serial.println(F("  status               Show current config & stats"));
+  Serial.println(F("  get remote status    Request and display remote status"));
   Serial.println(F("  set role <server|client>"));
   Serial.println(F("  set ip <x.x.x.x>     Own IP address"));
   Serial.println(F("  set subnet <x.x.x.x> Subnet mask"));
@@ -43,6 +70,24 @@ static void processCli(const char *line) {
 
   if (strcasecmp(line, "status") == 0) {
     printStatus();
+  }
+  else if (strcasecmp(line, "get remote status") == 0) {
+    if (!tcpConnected) {
+      Serial.println(F("[ERR] TCP is not connected."));
+      return;
+    }
+    if (remoteStatusRequestPending) {
+      Serial.println(F("[ERR] Remote status request already pending."));
+      return;
+    }
+    remoteStatusResponseReady = false;
+    if (sendRemoteStatusRequest()) {
+      remoteStatusRequestPending = true;
+      remoteStatusRequestStartMs = millis();
+      Serial.println(F("[SYS] Requested remote status. Waiting for response..."));
+    } else {
+      Serial.println(F("[ERR] Failed to send remote status request."));
+    }
   }
   else if (strcasecmp(line, "help") == 0 || strcmp(line, "?") == 0) {
     printHelp();
@@ -147,6 +192,8 @@ static void processCli(const char *line) {
 }
 
 void pollCli() {
+  checkRemoteStatusCompletion();
+
   while (Serial.available()) {
     char c = Serial.read();
     if (c == '\r' || c == '\n') {
