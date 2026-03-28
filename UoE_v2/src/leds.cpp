@@ -9,6 +9,23 @@ static uint32_t lastConnBlinkMs = 0;
 static uint32_t activityOffMs = 0;
 static bool connLedState = false;
 
+void runBootLedSelfTest() {
+  for (uint8_t i = 0; i < BOOT_LED_FLASH_COUNT; i++) {
+    digitalWrite(PIN_LED_ACTIVITY, HIGH);
+    digitalWrite(PIN_LED_CONNECT, HIGH);
+    digitalWrite(PIN_LED_ERROR, HIGH);
+    delay(BOOT_LED_FLASH_MS);
+
+    digitalWrite(PIN_LED_ACTIVITY, LOW);
+    digitalWrite(PIN_LED_CONNECT, LOW);
+    digitalWrite(PIN_LED_ERROR, LOW);
+
+    if (i + 1 < BOOT_LED_FLASH_COUNT) {
+      delay(BOOT_LED_GAP_MS);
+    }
+  }
+}
+
 void flashActivity() {
   digitalWrite(PIN_LED_ACTIVITY, HIGH);
   activityOffMs = millis() + ACTIVITY_FLASH_MS;

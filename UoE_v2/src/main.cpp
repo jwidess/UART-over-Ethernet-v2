@@ -495,6 +495,7 @@ void setup() {
   digitalWrite(PIN_LED_ACTIVITY, LOW);
   digitalWrite(PIN_LED_CONNECT, LOW);
   digitalWrite(PIN_LED_ERROR, LOW);
+  runBootLedSelfTest();
 
   // Serial0 - debug/CLI
   Serial.begin(SERIAL0_BAUD);
