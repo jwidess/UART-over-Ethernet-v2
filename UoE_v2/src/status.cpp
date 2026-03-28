@@ -9,7 +9,7 @@
 #include "shared_state.h"
 #include "utils.h"
 
-#define REMOTE_STATUS_VERSION 1
+#define REMOTE_STATUS_VERSION 2
 #define REMOTE_STATUS_FLAG_TCP_CONNECTED 0x01
 #define REMOTE_STATUS_FLAG_ETH_LINK_UP   0x02
 
@@ -40,9 +40,12 @@ static void printUptimeFromSeconds(uint32_t totalSec) {
 void buildRemoteStatusPayload(RemoteStatusPayload &payload) {
   payload.version = REMOTE_STATUS_VERSION;
   payload.flags = 0;
+  payload.hbIntervalSec = cfg.hbIntervalSec;
+  payload.reserved0 = 0;
   if (tcpConnected) payload.flags |= REMOTE_STATUS_FLAG_TCP_CONNECTED;
   if (ethLinkUp) payload.flags |= REMOTE_STATUS_FLAG_ETH_LINK_UP;
   payload.uartRxBufPeakUsed = uartRxBufPeakUsed;
+  payload.uartBaud = cfg.baud;
   payload.uptimeTotalSec = uptimeTotalSec;
   payload.reconnectCount = reconnectCount;
   payload.errorCount = errorCount;
@@ -54,6 +57,8 @@ void buildRemoteStatusPayload(RemoteStatusPayload &payload) {
   payload.peakTcpWriteMs = peakTcpWriteMs;
   payload.peakTcpReadMs = peakTcpReadMs;
   payload.peakTcpConnectMs = peakTcpConnectMs;
+  strncpy(payload.firmwareVersion, FW_VERSION, sizeof(payload.firmwareVersion) - 1);
+  payload.firmwareVersion[sizeof(payload.firmwareVersion) - 1] = '\0';
 }
 
 bool parseRemoteStatusPayload(const uint8_t *buf, uint8_t len, RemoteStatusPayload &outPayload) {
@@ -71,6 +76,9 @@ bool parseRemoteStatusPayload(const uint8_t *buf, uint8_t len, RemoteStatusPaylo
 
 void printRemoteStatus(const RemoteStatusPayload &payload) {
   Serial.println(F("=== Remote Status ==="));
+  Serial.print(F("  Firmware : v")); Serial.println(payload.firmwareVersion);
+  Serial.print(F("  UART Baud: ")); Serial.println(payload.uartBaud);
+  Serial.print(F("  HB Int.  : ")); Serial.print(payload.hbIntervalSec); Serial.println(F(" s"));
   Serial.print(F("  Eth Link : "));
   Serial.println((payload.flags & REMOTE_STATUS_FLAG_ETH_LINK_UP) ? F("UP") : F("DOWN"));
   Serial.print(F("  TCP      : "));

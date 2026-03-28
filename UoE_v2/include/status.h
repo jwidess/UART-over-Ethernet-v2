@@ -7,7 +7,10 @@
 struct RemoteStatusPayload {
 	uint8_t version;
 	uint8_t flags;
+	uint8_t hbIntervalSec;
+	uint8_t reserved0;
 	uint16_t uartRxBufPeakUsed;
+	uint32_t uartBaud;
 	uint32_t uptimeTotalSec;
 	uint32_t reconnectCount;
 	uint32_t errorCount;
@@ -19,6 +22,7 @@ struct RemoteStatusPayload {
 	uint32_t peakTcpWriteMs;
 	uint32_t peakTcpReadMs;
 	uint32_t peakTcpConnectMs;
+	char firmwareVersion[16];
 } __attribute__((packed));
 
 void buildRemoteStatusPayload(RemoteStatusPayload &payload);
