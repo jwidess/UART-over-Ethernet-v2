@@ -494,7 +494,10 @@ void setup() {
 
   // Serial0 - debug/CLI
   Serial.begin(SERIAL0_BAUD);
-  delay(3000);  // Give USB serial time to init
+  delay(1000);  // Give USB serial time to init
+  if (!Serial) {
+    delay(2000);  // Extra time to open Serial
+  }
 
   Serial.println();
   Serial.println(F("==================================="));
