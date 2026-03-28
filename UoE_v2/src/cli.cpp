@@ -3,6 +3,7 @@
 #include "cli.h"
 #include "config.h"
 #include "status.h"
+#include "utils.h"
 
 extern uint32_t errorCount;
 extern uint32_t reconnectCount;
@@ -16,12 +17,8 @@ extern uint32_t peakTcpConnectMs;
 void loadDefaults();
 void saveConfig();
 void rebootNow();
-bool parseIP(const char *str, uint8_t *out);
-bool parseMAC(const char *str, uint8_t *out);
-void printIP(const uint8_t *ip);
-void printMAC(const uint8_t *mac);
 
-static char cliBuf[80];
+static char cliBuf[CLI_BUF_SIZE];
 static uint8_t cliLen = 0;
 
 static void printHelp() {

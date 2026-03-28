@@ -3,6 +3,7 @@
 #include "fw_version.h"
 #include "config.h"
 #include "status.h"
+#include "utils.h"
 
 extern bool ethLinkUp;
 extern bool tcpConnected;
@@ -21,9 +22,6 @@ extern uint16_t uartRxBufPeakUsed;
 
 extern uint32_t uptimeTotalSec;
 extern uint32_t lastUptimeTickMs;
-
-void printIP(const uint8_t *ip);
-void printMAC(const uint8_t *mac);
 
 void updateUptime() {
   uint32_t now = millis();

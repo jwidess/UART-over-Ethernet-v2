@@ -14,22 +14,15 @@
 #include "config.h"
 #include "status.h"
 #include "cli.h"
-
-// ─── Pin Definitions ─────────────────────────────────────────────────────────
-#define PIN_LED_ACTIVITY  LED_BUILTIN   // Pin 13 - flash on UART/TCP activity
-#define PIN_LED_CONNECT   17            // Solid = TCP up, blink = connecting
-#define PIN_LED_ERROR     16            // Solid = errors present
+#include "utils.h"
+#include "leds.h"
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 #define SERIAL0_BAUD         115200
 // Ref build flag `-DSERIAL_RX_BUFFER_SIZE=1024` in platformio.ini
 #define UART_BUF_SIZE        256     // Max bytes to read from UART per loop
-#define CLI_BUF_SIZE         80      // Max bytes to read from CLI per loop
 #define TCP_RX_CHUNK         64      // Max bytes to read from TCP per loop
 #define UART_IDLE_MS         20      // Flush UART buffer after this idle gap
-#define ACTIVITY_FLASH_MS    30      // LED_BUILTIN on-time per event
-#define CONNECT_BLINK_MS     500     // Connection LED blink half-period
-#define ERROR_LED_PERSIST_MS 10000   // Error LED on for 10s after last error
 #define WDT_TIMEOUT          WDTO_4S
 
 // ─── Framing Protocol ────────────────────────────────────────────────────────
@@ -54,8 +47,6 @@ static uint16_t uartBufLen = 0;
 static uint32_t lastUartByteMs       = 0;
 static uint32_t lastHbSentMs         = 0;
 static uint32_t lastHbRecvMs         = 0;
-static uint32_t lastConnBlinkMs      = 0;
-static uint32_t activityOffMs        = 0;
 uint32_t uptimeTotalSec              = 0;
 uint32_t lastUptimeTickMs            = 0;
 static uint32_t backoffMs            = BACKOFF_INIT_MS;
@@ -85,7 +76,6 @@ uint16_t uartRxBufPeakUsed       = 0;  // High-water mark
 // ─── State ───────────────────────────────────────────────────────────────────
 bool tcpConnected             = false;
 static bool prevTcpConnected  = false;
-static bool connLedState      = false;
 bool ethLinkUp                = false;
 
 #define debugMode (cfg.debug)
@@ -139,108 +129,6 @@ void rebootNow() {
   wdt_enable(WDTO_15MS);
   while (1) {} // Wait for watchdog reset
 }
-
-// =============================================================================
-//  Print helper utils
-// =============================================================================
-
-void printIP(const uint8_t *ip) {
-  for (uint8_t i = 0; i < 4; i++) {
-    Serial.print(ip[i]);
-    if (i < 3) Serial.print('.');
-  }
-}
-
-void printMAC(const uint8_t *mac) {
-  for (uint8_t i = 0; i < 6; i++) {
-    if (mac[i] < 0x10) Serial.print('0');
-    Serial.print(mac[i], HEX);
-    if (i < 5) Serial.print(':');
-  }
-}
-
-bool parseIP(const char *str, uint8_t *out) {
-  uint16_t octets[4];
-  uint8_t count = 0;
-  const char *p = str;
-  while (count < 4) {
-    char *end;
-    long v = strtol(p, &end, 10);
-    if (end == p || v < 0 || v > 255) return false;
-    octets[count++] = (uint16_t)v;
-    if (count < 4) {
-      if (*end != '.') return false;
-      p = end + 1;
-    }
-  }
-  for (uint8_t i = 0; i < 4; i++) out[i] = (uint8_t)octets[i];
-  return true;
-}
-
-bool parseMAC(const char *str, uint8_t *out) {
-  // Accept XX:XX:XX:XX:XX:XX
-  if (strlen(str) != 17) return false;
-  for (uint8_t i = 0; i < 6; i++) {
-    char hi = str[i * 3];
-    char lo = str[i * 3 + 1];
-    char sep = (i < 5) ? str[i * 3 + 2] : ':';
-    if (i < 5 && sep != ':') return false;
-    auto hexVal = [](char c) -> int8_t {
-      if (c >= '0' && c <= '9') return c - '0';
-      if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-      if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-      return -1;
-    };
-    int8_t h = hexVal(hi);
-    int8_t l = hexVal(lo);
-    if (h < 0 || l < 0) return false;
-    out[i] = (uint8_t)((h << 4) | l);
-  }
-  return true;
-}
-
-// =============================================================================
-//  Activity LED
-// =============================================================================
-
-static void flashActivity() {
-  digitalWrite(PIN_LED_ACTIVITY, HIGH);
-  activityOffMs = millis() + ACTIVITY_FLASH_MS;
-}
-
-static void updateActivityLed() {
-  if (activityOffMs && (millis() >= activityOffMs)) {
-    digitalWrite(PIN_LED_ACTIVITY, LOW);
-    activityOffMs = 0;
-  }
-}
-
-// =============================================================================
-//  Connection & Error LEDs
-// =============================================================================
-
-static void updateConnectLed() {
-  if (tcpConnected) {
-    digitalWrite(PIN_LED_CONNECT, HIGH);
-  } else if (ethLinkUp) {
-    // Blink while trying to connect
-    uint32_t now = millis();
-    if ((now - lastConnBlinkMs) >= CONNECT_BLINK_MS) {
-      connLedState = !connLedState;
-      digitalWrite(PIN_LED_CONNECT, connLedState ? HIGH : LOW);
-      lastConnBlinkMs = now;
-    }
-  } else {
-    digitalWrite(PIN_LED_CONNECT, LOW);
-  }
-}
-
-static void updateErrorLed() {
-  // Light for ERROR_LED_PERSIST_MS after most recent error, then clear
-  bool recentError = (lastErrorMs > 0) && ((millis() - lastErrorMs) < ERROR_LED_PERSIST_MS);
-  digitalWrite(PIN_LED_ERROR, recentError ? HIGH : LOW);
-}
-
 
 // =============================================================================
 //  TCP connection management
