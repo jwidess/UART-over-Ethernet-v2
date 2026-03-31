@@ -103,6 +103,8 @@ The table below shows the time it takes to fill the RX buffer at different baud 
 | 57600 | 11.1 ms | 44.4 ms | 177.8 ms |
 | 115200 | 5.6 ms | 22.2 ms | 88.9 ms |
 
+# 3D Printable Enclosure
+Review the [Enclosure README.md](Enclosure/README.md) for a simple 3D printable enclosure design to house the Arduino Mega, W5100 shield, and perf board with MAX3232 transceiver and status LEDs.
 
 # To-do / Improvements
 - [x] ~~Add CLI config options for subnet mask and gateway~~
