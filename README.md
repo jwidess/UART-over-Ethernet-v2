@@ -14,19 +14,19 @@ While it would be better to use a more performant MCU and Ethernet controller fo
 
 ## How it works
 - Startup loads config from EEPROM (magic check, otherwise defaults).
-- Initializes Serial0 (115200) for CLI and debug, Serial1 for UART data.
-- Ethernet is initialized with local MAC/IP, subnet mask, gateway, and remote IP.
-- Server mode: listens on configured TCP port and accepts one client connection.
-- Client mode: connects to remote IP/port and retries with exponential backoff.
-- Data from Serial1 is buffered, framed (`[D|H|S|R][len][payload]`), and sent over TCP.
+- Initializes `Serial0` (115.2k baud) for CLI and debug, `Serial1` (at config'd baud) for serial bridge.
+- Ethernet is initialized with local MAC/IP, subnet mask, gateway, and the remote device IP.
+- **SERVER** mode: listens on configured TCP port and accepts one client connection.
+- **CLIENT** mode: connects to remote IP/port and retries with exponential backoff.
+- Data from `Serial1` is buffered, framed (`[D|H|S|R][len][payload]`), and sent over TCP.
    - Frame types: `D`=Data, `H`=Heartbeat, `S`=Status Request, `R`=Status Response
-- TCP data is parsed by a simple state machine and forwarded to Serial1.
-- `get remote status` sends a control frame request and receives a compact remote health/status response.
-- Heartbeats are sent and expected; missing several causes reconnect.
+- TCP data is parsed by a simple state machine and forwarded to `Serial1`.
+- `get remote status` sends a control frame request and receives a remote health/status response.
+- Heartbeats are sent and expected; missing several causes a reconnect.
 - Modifiable status LEDs using built-in (pin 13) for UART/TCP activity, pin 17 for TCP connection status, and pin 16 for errors.
    - `PIN_LED_CONNECT` (P17) - Blink = TCP Connecting, Solid = TCP Connected
    - `PIN_LED_ERROR` (P16) - On = Error within the last 10 seconds.
-   - `PIN_LED_ACTIVITY` (LED_BUILTIN) - Flashes on Serial1 or TCP Activity.
+   - `PIN_LED_ACTIVITY` (LED_BUILTIN) - Flashes on `Serial1` or TCP Activity.
 - WDT enabled (4s)
 
 ## Hardware Requirements
@@ -35,37 +35,37 @@ While it would be better to use a more performant MCU and Ethernet controller fo
 - Any UART devices to connect to `Serial1` (e.g., RS232/RS485 transceivers, PLCs, etc.)
 
 ## CLI commands and config
-Connect to the device over USB at **115200** baud to configure.
+Connect to the Mega's USB Port at **115200** baud to configure.
 **Supported commands:**
-- `status` - print current settings and runtime stats
-- `get remote status` - request and display remote board status over TCP
+- `status` - Print current settings and runtime stats
+- `get remote status` - Request and display remote board status over TCP
 - `set role <server|client>`
-- `set ip <x.x.x.x>`
-- `set subnet <x.x.x.x>`
-- `set gateway <x.x.x.x>`
-- `set remote <x.x.x.x>`
-- `set mac <XX:XX:XX:XX:XX:XX>`
-- `set port <N>`
+- `set ip <x.x.x.x>` - IP address of **this** board
+- `set subnet <x.x.x.x>` - Subnet mask (default /24)
+- `set gateway <x.x.x.x>` - (Optional)
+- `set remote <x.x.x.x>` - IP address of **other** board
+- `set mac <XX:XX:XX:XX:XX:XX>` - The MAC address of your W5100 shield.
+- `set port <N>` - TCP port number (1-65535) (default 3000)
 - `set baud <1200|2400|4800|9600|14400|19200|38400|57600|115200>`
-   - Warning: baud rates above 38400 may lose data during blocking operations; use with caution.
-- `set hbinterval <1..60>`
-- `save` - save config to EEPROM and reboot
-- `defaults` - reset to defaults and reboot
-- `reboot` - immediate reboot
-- `clearerrors` - reset error/reconnect counters
-- `set debug <on|off>` - toggle debug output
+   - Warning: baud rates >38400 increase the risk of missing `Serial1` data; Use with caution.
+- `set hbinterval <1..60>` - Heartbeat interval in seconds (default 5)
+- `save` - Save config to EEPROM and reboot
+- `defaults` - Reset to defaults and reboot immediately
+- `reboot` - Immediate reboot
+- `clearerrors` - Reset error/reconnect counters
+- `set debug <on|off>` - Debug output
 
 ## Usage
 1. Configure one board as SERVER (`set role server`) and one as CLIENT (`set role client`)
    1. NOTE: Defaults are subnet `255.255.255.0` and gateway `0.0.0.0` (no gateway). Change with `set subnet` and `set gateway` if needed.
 2. Set the IP address for each board (e.g., on SERVER `set ip 192.168.1.100`)
 3. Set the remote IP address on each board to point to the other (e.g., on SERVER `set remote 192.168.1.101`)
-4. Set the same port and baud rate on both boards (e.g., `set port 3000`, `set baud 9600`).
+4. Set the same baud rate on both boards (e.g., `set baud 9600`).
 5. Use `save` to write changes to EEPROM.
 6. Attach UART devices to `Serial1` (e.g., RS232 sensors/PLC).
 
 
-## VSCodium IDE Setup
+## VSCodium IDE Setup for Development & Flashing
 To set up any VSCodium IDE for this project, you will need to install the following extensions:
 - `PlatformIO IDE`
 - `clangd`
@@ -103,6 +103,8 @@ The table below shows the time it takes to fill the RX buffer at different baud 
 | 57600 | 11.1 ms | 44.4 ms | 177.8 ms |
 | 115200 | 5.6 ms | 22.2 ms | 88.9 ms |
 
+# 3D Printable Enclosure
+Review the [Enclosure README.md](Enclosure/README.md) for a simple 3D printable enclosure design to house the Arduino Mega, W5100 shield, and perf board with MAX3232 transceiver and status LEDs.
 
 # To-do / Improvements
 - [ ] Change remote status report to include `Role`, `Uptime`, and potentially last received serial data snippet.
