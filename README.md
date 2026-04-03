@@ -105,6 +105,9 @@ The table below shows the time it takes to fill the RX buffer at different baud 
 
 
 # To-do / Improvements
+- [ ] Change remote status report to include `Role`, `Uptime`, and potentially last received serial data snippet.
+- [ ] Add remote config set and save, would be very useful to be able to remotely change the config of the other board without needing to access it over USB.
+- [ ] Simple "encryption" of TCP data, just to obfuscate the stream and prevent casual snooping. Something simple like XOR or Caesar cipher. Currently anyone could send raw TCP frames to the device and inject serial data, which isn't ideal.
 - [x] ~~Add CLI config options for subnet mask and gateway~~
 - [ ] Add DHCP option
 - [x] ~~Add query packet to query the status report of the remote device.~~
